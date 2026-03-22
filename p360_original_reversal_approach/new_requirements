@@ -1,0 +1,13 @@
+Like we have multiple components under trade receivables i.e. 
+
+3004030	Trade Receivables - New Sales 
+3004040	Trade Receivables - Refurb Sales
+
+I have to create below Trade Receivables - B2B, currently this is coming under above mentioned categories only, i have to filter it by user_id and exclude that customer from above and create new components with id and ledger_name.
+
+Trade receivables	Trade Receivable Ledgers
+ 3004020	              Trade Receivables - B2B
+
+
+
+Also, currently we don't have vas for furlenco_sale, but it might be possible in future we can start relating vas with sale. So, i also have to add vas like we have done with unlmtd and rental to cover the future scenario
