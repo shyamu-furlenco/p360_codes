@@ -13,14 +13,14 @@
 -- STEP 3 — VERIFY:   Run the balance-check query at the bottom.
 --
 -- PREREQUISITES:
---   - p360_batch_control table must exist (see p360_batch_control_ddl.sql)
---   - p360_batch_audit table must exist (see p360_batch_audit_ddl.sql)
---   - p360_delta_state table must exist and be initialized (see p360_delta_state_ddl.sql, p360_state_init.sql)
+--   - p360_erp.p360_batch_control table must exist (see 01_setup.sql)
+--   - p360_erp.p360_batch_audit table must exist (see 01_setup.sql)
+--   - p360_erp.p360_delta_state table must exist and be initialized (see 01_setup.sql, 02_state_init.sql)
 --
 -- ARCHITECTURE NOTE:
---   This version uses p360_delta_state for efficient delta computation.
+--   This version uses p360_erp.p360_delta_state for efficient delta computation.
 --   Diffs against compact state table (O(current_keys)) instead of
---   scanning full p360_submissions history (O(history)).
+--   scanning full p360_erp.p360_submissions history (O(history)).
 -- =============================================================================
 
 -- =============================================================================
@@ -28,20 +28,20 @@
 -- (Uncomment and run this first)
 -- =============================================================================
 -- SELECT MAX(refreshed_at) AS last_refresh, COUNT(*) AS staging_rows
--- FROM p360_staging;
+-- FROM p360_erp.p360_staging;
 -- Expected: last_refresh = today's date. If stale, re-run p360_staging_refresh.sql first.
 
 -- =============================================================================
 -- STEP 0 — ALLOCATE BATCH ID (ATOMIC)
 -- Run this ONCE at the start of the batch process.
 -- Stores result in a temp table for use by Step 1.
--- Uses p360_batch_control for atomic sequence allocation (prevents race conditions).
+-- Uses p360_erp.p360_batch_control for atomic sequence allocation (prevents race conditions).
 -- =============================================================================
 
 DROP TABLE IF EXISTS p360_current_batch;
 
 -- Atomically allocate next batch_id
-UPDATE p360_batch_control
+UPDATE p360_erp.p360_batch_control
 SET
     last_batch_seq = CASE
         WHEN last_batch_date = CURRENT_DATE THEN last_batch_seq + 1
@@ -56,7 +56,7 @@ CREATE TEMP TABLE p360_current_batch AS
 SELECT
     'B_' || TO_CHAR(last_batch_date, 'YYYYMMDD') || '_' ||
     LPAD(CAST(last_batch_seq AS VARCHAR), 3, '0') AS batch_id
-FROM p360_batch_control
+FROM p360_erp.p360_batch_control
 WHERE control_key = 'BATCH_SEQ';
 
 -- Verify: SELECT * FROM p360_current_batch;
@@ -66,7 +66,7 @@ WHERE control_key = 'BATCH_SEQ';
 -- Creates a temp table with all rows to be sent in this batch.
 -- Safe to re-run: DROP TABLE IF EXISTS ensures a clean slate each time.
 --
--- PERFORMANCE: Diffs p360_staging against p360_delta_state (compact).
+-- PERFORMANCE: Diffs p360_erp.p360_staging against p360_erp.p360_delta_state (compact).
 -- This is O(staging_rows + state_rows), not O(submissions_history).
 -- =============================================================================
 
@@ -77,8 +77,8 @@ CREATE TEMP TABLE p360_batch_preview AS
 -- ===========================================================================
 -- CTE chain:
 --   new_batch     → uses pre-allocated batch_id from Step 0
---   current_state → current cumulative state per business key (from p360_delta_state)
---   current_data  → all rows currently in p360_staging
+--   current_state → current cumulative state per business key (from p360_erp.p360_delta_state)
+--   current_data  → all rows currently in p360_erp.p360_staging
 --   comparison    → FULL OUTER JOIN; labels each row's action
 --   batch_bounds  → MIN/MAX start_date across all rows being emitted
 --   delta_date    → start_date/end_date to stamp on CORRECTION_DELTA rows
@@ -104,7 +104,7 @@ current_state AS (
         store_id, organization_id, organization_email_id,
         start_date, end_date, remarks,
         last_batch_id AS batch_id
-    FROM p360_delta_state
+    FROM p360_erp.p360_delta_state
 ),
 
 -- ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ current_data AS (
         city_name, cycle_type, vertical, city_id,
         store_id, organization_id, organization_email_id,
         start_date, end_date, remarks
-    FROM p360_staging
+    FROM p360_erp.p360_staging
 ),
 
 -- ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ output_rows AS (
     UNION ALL
 
     -- RESTATEMENT: full new amount — silent state marker for CORRECTION.
-    -- NOT sent to P360; stored in p360_submissions so we have audit trail.
+    -- NOT sent to P360; stored in p360_erp.p360_submissions so we have audit trail.
     SELECT
         cmp.code_number, cmp.particulars,
         cmp.cur_DR  AS DR,
@@ -359,7 +359,7 @@ ORDER BY 1;
 -- Records the batch preview for audit trail before commit.
 -- =============================================================================
 
-INSERT INTO p360_batch_audit (
+INSERT INTO p360_erp.p360_batch_audit (
     batch_id, submission_date, cycle_start, cycle_end,
     staging_rows, preview_rows, original_rows, reversal_rows,
     restatement_rows, correction_delta_rows,
@@ -370,7 +370,7 @@ SELECT
     CURRENT_DATE,
     MIN(cycle_start),
     MAX(cycle_end),
-    (SELECT COUNT(*) FROM p360_staging),
+    (SELECT COUNT(*) FROM p360_erp.p360_staging),
     SUM(CASE WHEN row_type <> 'RESTATEMENT' THEN 1 ELSE 0 END),  -- P360-facing rows only
     SUM(CASE WHEN row_type = 'ORIGINAL' THEN 1 ELSE 0 END),
     SUM(CASE WHEN row_type = 'REVERSAL' THEN 1 ELSE 0 END),
@@ -403,7 +403,7 @@ GROUP BY batch_id;
 -- =============================================================================
 
 -- Mark batch as IN_PROGRESS before attempting commit
-UPDATE p360_batch_audit
+UPDATE p360_erp.p360_batch_audit
 SET status = 'IN_PROGRESS', committed_at = CURRENT_TIMESTAMP
 WHERE batch_id = (SELECT batch_id FROM p360_current_batch)
   AND status = 'PENDING';
@@ -411,16 +411,16 @@ WHERE batch_id = (SELECT batch_id FROM p360_current_batch)
 BEGIN;
 
 -- Acquire exclusive lock to prevent concurrent batch commits
-LOCK TABLE p360_submissions;
+LOCK TABLE p360_erp.p360_submissions;
 
 -- Capture row count before INSERT for accurate audit
 DROP TABLE IF EXISTS p360_pre_insert_count;
 CREATE TEMP TABLE p360_pre_insert_count AS
-SELECT COUNT(*) AS cnt FROM p360_submissions
+SELECT COUNT(*) AS cnt FROM p360_erp.p360_submissions
 WHERE batch_id = (SELECT batch_id FROM p360_current_batch);
 
 -- Idempotent INSERT: only insert if batch_id not already in submissions
-INSERT INTO p360_submissions (
+INSERT INTO p360_erp.p360_submissions (
     code_number, particulars, DR, CR, city_name, cycle_type, vertical,
     city_id, store_id, organization_id, organization_email_id,
     start_date, end_date, remarks, batch_id, submission_date,
@@ -433,36 +433,7 @@ SELECT
     p.cycle_start, p.cycle_end, p.row_type, p.reference_batch_id, p.correction_period
 FROM p360_batch_preview p
 WHERE NOT EXISTS (
-    SELECT 1 FROM p360_submissions s
-    WHERE s.batch_id = p.batch_id
-      AND s.code_number = p.code_number
-      AND s.city_id = p.city_id
-      AND s.vertical = p.vertical
-      AND s.cycle_type = p.cycle_type
-      AND s.start_date = p.start_date
-      AND s.end_date = p.end_date
-      AND s.organization_id = p.organization_id
-      AND COALESCE(s.store_id, '') = COALESCE(p.store_id, '')
-      AND COALESCE(s.correction_period, '1900-01-01') = COALESCE(p.correction_period, '1900-01-01')
-      AND s.row_type = p.row_type
-);
-
--- Mirror P360-facing rows into outbox (excludes RESTATEMENT internal markers)
-INSERT INTO p360_outbox (
-    code_number, particulars, DR, CR, city_name, cycle_type, vertical,
-    city_id, store_id, organization_id, organization_email_id,
-    start_date, end_date, remarks, batch_id, submission_date,
-    cycle_start, cycle_end, row_type, reference_batch_id, correction_period
-)
-SELECT
-    p.code_number, p.particulars, p.DR, p.CR, p.city_name, p.cycle_type, p.vertical,
-    p.city_id, p.store_id, p.organization_id, p.organization_email_id,
-    p.start_date, p.end_date, p.remarks, p.batch_id, p.submission_date,
-    p.cycle_start, p.cycle_end, p.row_type, p.reference_batch_id, p.correction_period
-FROM p360_batch_preview p
-WHERE p.row_type IN ('ORIGINAL', 'REVERSAL', 'CORRECTION_DELTA')
-  AND NOT EXISTS (
-    SELECT 1 FROM p360_outbox s
+    SELECT 1 FROM p360_erp.p360_submissions s
     WHERE s.batch_id = p.batch_id
       AND s.code_number = p.code_number
       AND s.city_id = p.city_id
@@ -483,7 +454,7 @@ WHERE p.row_type IN ('ORIGINAL', 'REVERSAL', 'CORRECTION_DELTA')
 -- =============================================================================
 
 -- Step 2a: Delete reversed rows from state
-DELETE FROM p360_delta_state
+DELETE FROM p360_erp.p360_delta_state
 WHERE (code_number, city_id, vertical, cycle_type, start_date, end_date,
        COALESCE(organization_id, ''), COALESCE(store_id, '')) IN (
     SELECT code_number, city_id, vertical, cycle_type, start_date, end_date,
@@ -494,7 +465,7 @@ WHERE (code_number, city_id, vertical, cycle_type, start_date, end_date,
 
 -- Step 2b: Upsert for ORIGINAL and RESTATEMENT rows
 -- Update existing state rows
-UPDATE p360_delta_state
+UPDATE p360_erp.p360_delta_state
 SET
     cum_dr = COALESCE(p.DR, 0),
     cum_cr = COALESCE(p.CR, 0),
@@ -511,17 +482,17 @@ FROM (
     FROM p360_batch_preview
     WHERE row_type IN ('ORIGINAL', 'RESTATEMENT')
 ) p
-WHERE p360_delta_state.code_number = p.code_number
-  AND p360_delta_state.city_id = p.city_id
-  AND p360_delta_state.vertical = p.vertical
-  AND p360_delta_state.cycle_type = p.cycle_type
-  AND p360_delta_state.start_date = p.start_date
-  AND p360_delta_state.end_date = p.end_date
-  AND COALESCE(p360_delta_state.organization_id, '') = COALESCE(p.organization_id, '')
-  AND COALESCE(p360_delta_state.store_id, '') = COALESCE(p.store_id, '');
+WHERE p360_erp.p360_delta_state.code_number = p.code_number
+  AND p360_erp.p360_delta_state.city_id = p.city_id
+  AND p360_erp.p360_delta_state.vertical = p.vertical
+  AND p360_erp.p360_delta_state.cycle_type = p.cycle_type
+  AND p360_erp.p360_delta_state.start_date = p.start_date
+  AND p360_erp.p360_delta_state.end_date = p.end_date
+  AND COALESCE(p360_erp.p360_delta_state.organization_id, '') = COALESCE(p.organization_id, '')
+  AND COALESCE(p360_erp.p360_delta_state.store_id, '') = COALESCE(p.store_id, '');
 
 -- Insert new state rows (ORIGINAL only - these don't exist in state yet)
-INSERT INTO p360_delta_state (
+INSERT INTO p360_erp.p360_delta_state (
     code_number, city_id, vertical, cycle_type, start_date, end_date,
     organization_id, store_id, particulars, city_name,
     organization_email_id, remarks, cum_dr, cum_cr,
@@ -535,7 +506,7 @@ SELECT
 FROM p360_batch_preview p
 WHERE p.row_type = 'ORIGINAL'
   AND NOT EXISTS (
-      SELECT 1 FROM p360_delta_state st
+      SELECT 1 FROM p360_erp.p360_delta_state st
       WHERE st.code_number = p.code_number
         AND st.city_id = p.city_id
         AND st.vertical = p.vertical
@@ -547,10 +518,10 @@ WHERE p.row_type = 'ORIGINAL'
   );
 
 -- Update audit log with actual committed row count
-UPDATE p360_batch_audit
+UPDATE p360_erp.p360_batch_audit
 SET
     committed_rows = (
-        SELECT COUNT(*) FROM p360_submissions
+        SELECT COUNT(*) FROM p360_erp.p360_submissions
         WHERE batch_id = (SELECT batch_id FROM p360_current_batch)
     ) - (SELECT cnt FROM p360_pre_insert_count),
     committed_at = CURRENT_TIMESTAMP,
@@ -572,7 +543,7 @@ DROP TABLE IF EXISTS p360_pre_insert_count;
 
 -- ROLLBACK;  -- Undo any partial changes
 -- 
--- UPDATE p360_batch_audit
+-- UPDATE p360_erp.p360_batch_audit
 -- SET
 --     status = 'FAILED',
 --     error_message = 'Manual rollback - describe error here',
@@ -594,7 +565,7 @@ DROP TABLE IF EXISTS p360_pre_insert_count;
 --     code_number, particulars, city_name, cycle_type, vertical,
 --     SUM(COALESCE(DR, 0)) AS net_DR,
 --     SUM(COALESCE(CR, 0)) AS net_CR
--- FROM p360_submissions
+-- FROM p360_erp.p360_submissions
 -- GROUP BY code_number, particulars, city_name, cycle_type, vertical
 -- ORDER BY city_name, vertical;
 
@@ -603,7 +574,7 @@ DROP TABLE IF EXISTS p360_pre_insert_count;
 --     SUM(cum_dr) AS total_state_dr,
 --     SUM(cum_cr) AS total_state_cr,
 --     SUM(cum_dr) - SUM(cum_cr) AS state_imbalance
--- FROM p360_delta_state;
+-- FROM p360_erp.p360_delta_state;
 
 -- Check latest audit record
--- SELECT * FROM p360_batch_audit ORDER BY started_at DESC LIMIT 5;
+-- SELECT * FROM p360_erp.p360_batch_audit ORDER BY started_at DESC LIMIT 5;

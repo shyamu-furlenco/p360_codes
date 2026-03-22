@@ -1,4 +1,20 @@
+-- =============================================================================
+-- P360 STAGING REFRESH
+-- Run daily (scheduler / cron).
+-- Truncates p360_erp.p360_staging and re-populates it with the full current source
+-- data, using the identical CTE chain from p360_original_code.sql.
+-- =============================================================================
 
+BEGIN;
+
+DELETE FROM p360_erp.p360_staging;        -- NOT TRUNCATE: DELETE is transactional in Redshift; TRUNCATE auto-commits and cannot be rolled back if the INSERT below fails
+
+INSERT INTO p360_erp.p360_staging (
+    code_number, particulars, DR, CR,
+    city_name, cycle_type, vertical, city_id,
+    store_id, organization_id, organization_email_id,
+    start_date, end_date, remarks
+)
 
 -- =============================================================================
 -- P360 FINAL VIEW (Combined) - Rental + Sale + UNLMTD
@@ -29,6 +45,13 @@ period_config AS (
 ),
 
 -- =============================================================================
+-- B2B USERS — single source of truth for B2B customer IDs
+-- =============================================================================
+b2b_users AS (
+    SELECT 'FUR17641677857' as fur_id
+),
+
+-- =============================================================================
 -- Step 1: All billable entities across Rental, Sale, and UNLMTD
 --         dispatch_fc_id resolved via: entity → snapshotted_addresses.pincode
 --         → wmsl_evolve.fc_configuration_for_pincodes → dispatch_fc_id
@@ -39,7 +62,8 @@ filtered_entities AS (
     -- RENTAL: Items
     -- -------------------------------------------------------------------------
     SELECT i.id AS entity_id, 'ITEM' AS entity_type, i.vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.items AS i
     LEFT JOIN order_management_systems_evolve.snapshotted_addresses AS sa
         ON i.snapshotted_delivery_address_id = sa.id
@@ -54,7 +78,8 @@ filtered_entities AS (
     -- RENTAL: Attachments
     -- -------------------------------------------------------------------------
     SELECT a.id AS entity_id, 'ATTACHMENT' AS entity_type, a.vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.attachments AS a
     LEFT JOIN order_management_systems_evolve.snapshotted_addresses AS sa
         ON a.snapshotted_delivery_address_id = sa.id
@@ -69,7 +94,8 @@ filtered_entities AS (
     -- RENTAL: VAS linked to Items
     -- -------------------------------------------------------------------------
     SELECT vas.id AS entity_id, 'VALUE_ADDED_SERVICE' AS entity_type, i.vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.value_added_services AS vas
     JOIN order_management_systems_evolve.items AS i
       ON vas.entity_id = i.id AND vas.entity_type = 'ITEM'
@@ -87,7 +113,8 @@ filtered_entities AS (
     -- RENTAL: VAS linked to Attachments
     -- -------------------------------------------------------------------------
     SELECT vas.id AS entity_id, 'VALUE_ADDED_SERVICE' AS entity_type, a.vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.value_added_services AS vas
     JOIN order_management_systems_evolve.attachments AS a
       ON vas.entity_id = a.id AND vas.entity_type = 'ATTACHMENT'
@@ -105,7 +132,8 @@ filtered_entities AS (
     -- RENTAL: Penalties (parent may be Item or Attachment)
     -- -------------------------------------------------------------------------
     SELECT pen.id AS entity_id, 'PENALTY' AS entity_type, pen.vertical,
-        COALESCE(fc_i.dispatch_fc_id, fc_a.dispatch_fc_id) AS dispatch_fc_id
+        COALESCE(fc_i.dispatch_fc_id, fc_a.dispatch_fc_id) AS dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.penalty AS pen
     LEFT JOIN order_management_systems_evolve.items AS i
         ON pen.product_entity_id = i.id AND pen.product_entity_type = 'ITEM'
@@ -136,7 +164,8 @@ filtered_entities AS (
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source = 'OFFLINE_STORE'                 THEN 'Refurb Sales - Store'
         END AS vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) AS is_b2b
     FROM order_management_systems_evolve.items AS i
     JOIN plutus_evolve.products AS p ON i.catalog_item_id = p.id
     JOIN order_management_systems_evolve.orders AS ord ON i.order_id = ord.id
@@ -162,7 +191,8 @@ filtered_entities AS (
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source = 'OFFLINE_STORE'                 THEN 'Refurb Sales - Store'
         END AS vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) AS is_b2b
     FROM order_management_systems_evolve.attachments AS a
     JOIN plutus_evolve.products AS p ON a.catalog_item_id = p.id
     JOIN order_management_systems_evolve.orders AS ord ON a.order_id = ord.id
@@ -177,10 +207,71 @@ filtered_entities AS (
     UNION ALL
 
     -- -------------------------------------------------------------------------
+    -- SALE: VAS linked to Items
+    -- -------------------------------------------------------------------------
+    SELECT
+        vas.id AS entity_id,
+        'VALUE_ADDED_SERVICE' AS entity_type,
+        CASE
+            WHEN p.line_of_product = 'BUY_NEW'         AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'New Sales - D2C'
+            WHEN p.line_of_product = 'BUY_NEW'         AND ord.source = 'OFFLINE_STORE'                 THEN 'New Sales - Store'
+            WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
+            WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source = 'OFFLINE_STORE'                 THEN 'Refurb Sales - Store'
+        END AS vertical,
+        fc_pin.dispatch_fc_id,
+        (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) AS is_b2b
+    FROM order_management_systems_evolve.value_added_services AS vas
+    JOIN order_management_systems_evolve.items AS i
+      ON vas.entity_id = i.id AND vas.entity_type = 'ITEM'
+    JOIN plutus_evolve.products AS p ON i.catalog_item_id = p.id
+    JOIN order_management_systems_evolve.orders AS ord ON i.order_id = ord.id
+    LEFT JOIN order_management_systems_evolve.snapshotted_addresses AS sa
+        ON i.snapshotted_delivery_address_id = sa.id
+    LEFT JOIN wmsl_evolve.fc_configuration_for_pincodes AS fc_pin
+        ON i.vertical = fc_pin.vertical AND sa.pincode = fc_pin.pincode
+    WHERE i.vertical = 'FURLENCO_SALE'
+      AND i.state <> 'CANCELLED'
+      AND p.line_of_product IN ('BUY_REFURBISHED', 'BUY_NEW')
+      AND vas.state <> 'CANCELLED'
+
+    UNION ALL
+
+    -- -------------------------------------------------------------------------
+    -- SALE: VAS linked to Attachments
+    -- -------------------------------------------------------------------------
+    SELECT
+        vas.id AS entity_id,
+        'VALUE_ADDED_SERVICE' AS entity_type,
+        CASE
+            WHEN p.line_of_product = 'BUY_NEW'         AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'New Sales - D2C'
+            WHEN p.line_of_product = 'BUY_NEW'         AND ord.source = 'OFFLINE_STORE'                 THEN 'New Sales - Store'
+            WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
+            WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source = 'OFFLINE_STORE'                 THEN 'Refurb Sales - Store'
+        END AS vertical,
+        fc_pin.dispatch_fc_id,
+        (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) AS is_b2b
+    FROM order_management_systems_evolve.value_added_services AS vas
+    JOIN order_management_systems_evolve.attachments AS a
+      ON vas.entity_id = a.id AND vas.entity_type = 'ATTACHMENT'
+    JOIN plutus_evolve.products AS p ON a.catalog_item_id = p.id
+    JOIN order_management_systems_evolve.orders AS ord ON a.order_id = ord.id
+    LEFT JOIN order_management_systems_evolve.snapshotted_addresses AS sa
+        ON a.snapshotted_delivery_address_id = sa.id
+    LEFT JOIN wmsl_evolve.fc_configuration_for_pincodes AS fc_pin
+        ON a.vertical = fc_pin.vertical AND sa.pincode = fc_pin.pincode
+    WHERE a.vertical = 'FURLENCO_SALE'
+      AND a.state <> 'CANCELLED'
+      AND p.line_of_product IN ('BUY_REFURBISHED', 'BUY_NEW')
+      AND vas.state <> 'CANCELLED'
+
+    UNION ALL
+
+    -- -------------------------------------------------------------------------
     -- UNLMTD: Plans
     -- -------------------------------------------------------------------------
     SELECT p.id AS entity_id, 'PLAN' AS entity_type, 'UNLMTD' AS vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.plans AS p
     LEFT JOIN order_management_systems_evolve.snapshotted_addresses AS sa
         ON p.snapshotted_delivery_address_id = sa.id
@@ -194,7 +285,8 @@ filtered_entities AS (
     -- UNLMTD: VAS linked to Plans
     -- -------------------------------------------------------------------------
     SELECT vas.id AS entity_id, 'VALUE_ADDED_SERVICE' AS entity_type, 'UNLMTD' AS vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.value_added_services AS vas
     JOIN order_management_systems_evolve.plans AS p
       ON vas.entity_id = p.id AND vas.entity_type = 'PLAN'
@@ -211,7 +303,8 @@ filtered_entities AS (
     -- UNLMTD: Penalties (parent is Plan)
     -- -------------------------------------------------------------------------
     SELECT pen.id AS entity_id, 'PENALTY' AS entity_type, pen.vertical,
-        fc_pin.dispatch_fc_id
+        fc_pin.dispatch_fc_id,
+        FALSE AS is_b2b
     FROM order_management_systems_evolve.penalty AS pen
     LEFT JOIN order_management_systems_evolve.plans AS p
         ON pen.product_entity_id = p.id AND pen.product_entity_type = 'PLAN'
@@ -302,7 +395,8 @@ settlements AS (
              THEN (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE
              ELSE (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE)::INTEGER + 7
         END AS week_end_date,
-        fe.dispatch_fc_id
+        fe.dispatch_fc_id,
+        fe.is_b2b
 
     FROM furbooks_evolve.revenue_recognitions AS rr
     JOIN filtered_entities fe
@@ -349,7 +443,8 @@ settlements AS (
              THEN cn.issue_date::DATE
              ELSE cn.issue_date::DATE - EXTRACT(DOW FROM cn.issue_date::DATE)::INTEGER + 7
         END AS week_end_date,
-        fe.dispatch_fc_id
+        fe.dispatch_fc_id,
+        fe.is_b2b
 
     FROM furbooks_evolve.invoice_cycles AS ic
     JOIN furbooks_evolve.credit_notes AS cn ON cn.invoice_id = ic.invoice_id
@@ -393,7 +488,8 @@ settlements AS (
              THEN cn.issue_date::DATE
              ELSE cn.issue_date::DATE - EXTRACT(DOW FROM cn.issue_date::DATE)::INTEGER + 7
         END AS week_end_date,
-        fe.dispatch_fc_id
+        fe.dispatch_fc_id,
+        fe.is_b2b
 
     FROM furbooks_evolve.credit_notes AS cn
     JOIN furbooks_evolve.outstanding_settlements AS os
@@ -413,7 +509,8 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
  	COALESCE(NULLIF(sgst_rate,0)::float, (ROUND((sgst_amount::float * 100) / NULLIF(taxable_amount,0)::float)/100)::float) as sgst_rate,
  	COALESCE(NULLIF(igst_rate,0)::float, (ROUND((igst_amount::float * 100) / NULLIF(taxable_amount,0)::float)/100)::float) as igst_rate,
  	cgst_amount, sgst_amount, igst_amount, week_start_date, week_end_date, dispatch_fc_id,
- 	billing_start_date, billing_end_date
+ 	billing_start_date, billing_end_date,
+ 	is_b2b
  FROM financial_events
  )
 
@@ -425,6 +522,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
 , deferral_calc AS (
   SELECT
     city_id, vertical, dispatch_fc_id,
+    is_b2b,
     recognised_date                  AS dr_recognised_date,
     DATE_TRUNC('month', billing_end_date) AS cr_recognised_date,
     EXTRACT(DAY FROM billing_start_date) AS start_day,
@@ -435,7 +533,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
       ELSE                                                            (billing_end_date - billing_start_date + 1 - 0.5)
     END AS total_days,
     DATEADD(day, -1, DATEADD(month, 1, DATE_TRUNC('month', billing_start_date))) AS current_month_end,
-    post_tax_amount, ncemi_amount, taxable_amount 
+    post_tax_amount, ncemi_amount, taxable_amount
   FROM gst_fix
   WHERE cycle_type = 'Normal_billing_cycle'
     AND billing_end_date IS NOT NULL
@@ -445,6 +543,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
 , deferral_amounts AS (
   SELECT
     city_id, vertical, dispatch_fc_id,
+    is_b2b,
     dr_recognised_date,
     cr_recognised_date,
     -- next_month_post_tax: total minus current-month portion (avoids dual rounding)
@@ -463,6 +562,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
     fc.p360_organisation_id,
     fc.p360_store_id,
     da.vertical,
+    da.is_b2b,
     da.dr_recognised_date AS recognised_date,
     da.cr_recognised_date,
     SUM(da.next_month_taxable_amount) AS next_month_taxable_amount
@@ -472,7 +572,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
   LEFT JOIN panem_evolve.cities AS c ON c.id = da.city_id
   WHERE da.next_month_taxable_amount <> 0
   GROUP BY c.name, da.city_id, fc.email, fc.p360_organisation_id, fc.p360_store_id,
-           da.vertical, da.dr_recognised_date, da.cr_recognised_date
+           da.vertical, da.is_b2b, da.dr_recognised_date, da.cr_recognised_date
 )
 
 , agg_view AS (
@@ -483,6 +583,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
         fc.p360_organisation_id,
         fc.p360_store_id,
         ev.vertical,
+        ev.is_b2b,
         ev.recognised_date,
         ev.cycle_type,
 
@@ -538,7 +639,7 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
     LEFT JOIN panem_evolve.cities AS c ON c.id = ev.city_id
     GROUP BY
         c.name, ev.city_id, ev.dispatch_fc_id, fc.email, fc.p360_organisation_id, fc.p360_store_id,
-        ev.vertical, recognised_date,
+        ev.vertical, ev.is_b2b, recognised_date,
         ev.cycle_type,
         cgst_ledger_name, cgst_ledger_code,
         sgst_ledger_name, sgst_ledger_code,
@@ -555,17 +656,19 @@ unpivoted_data AS (
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, cycle_type, recognised_date,
         CASE
-            WHEN vertical = 'FURLENCO_RENTAL'                                         THEN '3004010'
-            WHEN vertical = 'UNLMTD'                                                  THEN '3004080'
-            WHEN vertical IN ('New Sales - D2C', 'New Sales - Store')                 THEN '3004030'
-            WHEN vertical IN ('Refurb Sales - D2C', 'Refurb Sales - Store')           THEN '3004040'
+            WHEN is_b2b = TRUE                                                            THEN '3004020'
+            WHEN vertical = 'FURLENCO_RENTAL'                                             THEN '3004010'
+            WHEN vertical = 'UNLMTD'                                                      THEN '3004080'
+            WHEN vertical IN ('New Sales - D2C', 'New Sales - Store')                     THEN '3004030'
+            WHEN vertical IN ('Refurb Sales - D2C', 'Refurb Sales - Store')               THEN '3004040'
             ELSE '0000000'
         END AS code_number,
         CASE
-            WHEN vertical = 'FURLENCO_RENTAL'                                         THEN 'Trade Receivables - Furlenco'
-            WHEN vertical = 'UNLMTD'                                                  THEN 'Trade Receivables - Unlmtd'
-            WHEN vertical IN ('New Sales - D2C', 'New Sales - Store')                 THEN 'Trade Receivables - New Sales'
-            WHEN vertical IN ('Refurb Sales - D2C', 'Refurb Sales - Store')           THEN 'Trade Receivables - Refurb Sales'
+            WHEN is_b2b = TRUE                                                            THEN 'Trade Receivables - B2B'
+            WHEN vertical = 'FURLENCO_RENTAL'                                             THEN 'Trade Receivables - Furlenco'
+            WHEN vertical = 'UNLMTD'                                                      THEN 'Trade Receivables - Unlmtd'
+            WHEN vertical IN ('New Sales - D2C', 'New Sales - Store')                     THEN 'Trade Receivables - New Sales'
+            WHEN vertical IN ('Refurb Sales - D2C', 'Refurb Sales - Store')               THEN 'Trade Receivables - Refurb Sales'
             ELSE 'Trade Receivables - Unknown'
         END AS particulars,
         sum_of_total::FLOAT AS DR, NULL::FLOAT AS CR,
@@ -784,3 +887,6 @@ ORDER BY
     vertical,
     row_order,
     sub_order
+
+
+COMMIT;

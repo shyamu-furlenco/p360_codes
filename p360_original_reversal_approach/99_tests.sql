@@ -679,6 +679,372 @@ ORDER BY submission_date, batch_id, row_type, code_number;
 
 
 -- =============================================================================
+-- RESET FOR SCENARIOS 8–11
+-- =============================================================================
+-- Clean slate: wipe all state from Scenarios 1–7.
+-- Scenarios 8–11 are fully self-contained and can be run independently.
+-- =============================================================================
+
+DELETE FROM test_staging;
+DELETE FROM test_submissions;
+
+
+-- =============================================================================
+-- SCENARIO 8 — All cycle_types in one batch
+-- =============================================================================
+-- Demonstrates that cycle_type is part of the business key — rows with the
+-- same code_number, city, and date but different cycle_types are distinct
+-- ledger entries, each becoming its own ORIGINAL row.
+--
+-- City 40 (Delhi) | FURLENCO_RENTAL | week 2025-02-03 → 2025-02-09
+-- 6 cycle_types × 4 journal entries = 24 rows, all ORIGINAL.
+--
+-- Balance per cycle_type:
+--   Normal_billing_cycle : 11,800 DR = 10,000 Revenue + 900 CGST + 900 SGST CR
+--   Swap                 :  5,900 DR =  5,000 Revenue + 450 CGST + 450 SGST CR
+--   VAS                  :    590 DR =    500 Revenue +  45 CGST +  45 SGST CR
+--   MTP                  :  3,540 DR =  3,000 Revenue + 270 CGST + 270 SGST CR
+--   Penalty              :  2,360 DR =  2,000 Revenue + 180 CGST + 180 SGST CR
+--   Credit_Note          : DR/CR flipped — 11,800 CR Trade Rec = 10,000+900+900 DR Revenue/Tax
+-- =============================================================================
+
+INSERT INTO test_staging VALUES
+    -- Normal_billing_cycle: standard monthly rental
+    ('3004010','Trade Receivables - Furlenco', 11800.00, NULL,    'Delhi','Normal_billing_cycle','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',           NULL,    10000.00, 'Delhi','Normal_billing_cycle','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',               NULL,      900.00, 'Delhi','Normal_billing_cycle','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',               NULL,      900.00, 'Delhi','Normal_billing_cycle','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- Swap: same code_numbers, different cycle_type = different business key
+    ('3004010','Trade Receivables - Furlenco',  5900.00, NULL,    'Delhi','Swap','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',            NULL,    5000.00, 'Delhi','Swap','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',               NULL,      450.00, 'Delhi','Swap','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',               NULL,      450.00, 'Delhi','Swap','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- VAS: value added service
+    ('3004010','Trade Receivables - Furlenco',   590.00, NULL,    'Delhi','VAS','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',            NULL,     500.00, 'Delhi','VAS','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',               NULL,      45.00,  'Delhi','VAS','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',               NULL,      45.00,  'Delhi','VAS','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- MTP: min tenure penalty (early return)
+    ('3004010','Trade Receivables - Furlenco',  3540.00, NULL,    'Delhi','MTP','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',            NULL,    3000.00, 'Delhi','MTP','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',               NULL,      270.00, 'Delhi','MTP','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',               NULL,      270.00, 'Delhi','MTP','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- Penalty: non-MTP penalty
+    ('3004010','Trade Receivables - Furlenco',  2360.00, NULL,    'Delhi','Penalty','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',            NULL,    2000.00, 'Delhi','Penalty','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',               NULL,      180.00, 'Delhi','Penalty','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',               NULL,      180.00, 'Delhi','Penalty','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- Credit_Note: DR/CR are FLIPPED — this is a revenue reversal
+    ('3004010','Trade Receivables - Furlenco',  NULL,   11800.00, 'Delhi','Credit_Note','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',           10000.00, NULL,    'Delhi','Credit_Note','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',                 900.00, NULL,    'Delhi','Credit_Note','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',                 900.00, NULL,    'Delhi','Credit_Note','FURLENCO_RENTAL',40,'ST004','ORG004','delhi@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025');
+
+DROP TABLE IF EXISTS test_batch_preview;
+CREATE TEMP TABLE test_batch_preview AS
+WITH
+new_batch AS (SELECT 'B_'||TO_CHAR(CURRENT_DATE,'YYYYMMDD')||'_'||LPAD(CAST((SELECT COUNT(DISTINCT batch_id) FROM test_submissions WHERE submission_date=CURRENT_DATE)+1 AS VARCHAR),3,'0') AS batch_id),
+last_sent AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY code_number,city_id,vertical,cycle_type,start_date,end_date,organization_id,COALESCE(store_id,'') ORDER BY submission_date DESC,batch_id DESC) AS rn FROM test_submissions WHERE row_type IN ('ORIGINAL','RESTATEMENT')) t WHERE rn=1),
+current_data AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks FROM test_staging),
+comparison AS (
+    SELECT COALESCE(cur.code_number,ls.code_number) AS code_number,COALESCE(cur.particulars,ls.particulars) AS particulars,COALESCE(cur.city_name,ls.city_name) AS city_name,COALESCE(cur.cycle_type,ls.cycle_type) AS cycle_type,COALESCE(cur.vertical,ls.vertical) AS vertical,COALESCE(cur.city_id,ls.city_id) AS city_id,COALESCE(cur.store_id,ls.store_id) AS store_id,COALESCE(cur.organization_id,ls.organization_id) AS organization_id,COALESCE(cur.organization_email_id,ls.organization_email_id) AS organization_email_id,COALESCE(cur.start_date,ls.start_date) AS start_date,COALESCE(cur.end_date,ls.end_date) AS end_date,COALESCE(cur.remarks,ls.remarks) AS remarks,cur.DR AS cur_DR,cur.CR AS cur_CR,ls.DR AS old_DR,ls.CR AS old_CR,ls.batch_id AS last_batch_id,
+    CASE WHEN ls.code_number IS NULL THEN 'ORIGINAL' WHEN cur.code_number IS NULL THEN 'REVERSAL_ONLY' WHEN ROUND(COALESCE(cur.DR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.DR,0)::NUMERIC,4) OR ROUND(COALESCE(cur.CR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.CR,0)::NUMERIC,4) THEN 'CORRECTION' ELSE 'UNCHANGED' END AS action
+    FROM current_data cur FULL OUTER JOIN last_sent ls ON cur.code_number=ls.code_number AND cur.city_id=ls.city_id AND cur.vertical=ls.vertical AND cur.cycle_type=ls.cycle_type AND cur.start_date=ls.start_date AND cur.end_date=ls.end_date AND cur.organization_id=ls.organization_id AND COALESCE(cur.store_id,'')=COALESCE(ls.store_id,'')
+),
+batch_bounds AS (SELECT MIN(start_date) AS cycle_start,MAX(start_date) AS cycle_end FROM comparison WHERE action IN ('ORIGINAL','REVERSAL_ONLY','CORRECTION')),
+delta_date AS (SELECT COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN start_date END),CURRENT_DATE) AS start_date, COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN end_date END),CURRENT_DATE) AS end_date FROM comparison),
+output_rows AS (
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE AS submission_date,bb.cycle_start,bb.cycle_end,'ORIGINAL'::VARCHAR AS row_type,NULL::VARCHAR AS reference_batch_id,NULL::DATE AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='ORIGINAL'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.old_CR AS DR,cmp.old_DR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'REVERSAL'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='REVERSAL_ONLY'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'RESTATEMENT'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='CORRECTION'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,CASE WHEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0)>0 THEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0) WHEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0)>0 THEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0) ELSE NULL END AS DR,CASE WHEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0)>0 THEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0) WHEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0)>0 THEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0) ELSE NULL END AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,dd.start_date,dd.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'CORRECTION_DELTA'::VARCHAR,cmp.last_batch_id,cmp.start_date AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb CROSS JOIN delta_date dd WHERE cmp.action='CORRECTION'
+)
+SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id,submission_date,cycle_start,cycle_end,row_type,reference_batch_id,correction_period FROM output_rows;
+
+SELECT '--- Scenario 8 output: All cycle_types ---' AS scenario;
+SELECT cycle_type, code_number, particulars, DR, CR, row_type
+FROM test_batch_preview
+ORDER BY cycle_type, CASE WHEN DR IS NOT NULL THEN 0 ELSE 1 END, code_number;
+
+-- ASSERTIONS
+SELECT 'FAIL S8-A: expected 24 rows, got '               || COUNT(*) AS result FROM test_batch_preview HAVING COUNT(*) <> 24;
+SELECT 'FAIL S8-B: expected all ORIGINAL rows'           AS result FROM test_batch_preview WHERE row_type <> 'ORIGINAL' LIMIT 1;
+SELECT 'FAIL S8-C: expected 6 distinct cycle_types, got '|| COUNT(DISTINCT cycle_type) AS result FROM test_batch_preview HAVING COUNT(DISTINCT cycle_type) <> 6;
+SELECT 'FAIL S8-D: Normal_billing_cycle Trade Rec DR should be 11800' AS result FROM test_batch_preview WHERE cycle_type='Normal_billing_cycle' AND code_number='3004010' AND DR <> 11800.00 LIMIT 1;
+SELECT 'FAIL S8-E: Swap Trade Rec DR should be 5900'                  AS result FROM test_batch_preview WHERE cycle_type='Swap'     AND code_number='3004010' AND DR <> 5900.00  LIMIT 1;
+SELECT 'FAIL S8-F: VAS Trade Rec DR should be 590'                    AS result FROM test_batch_preview WHERE cycle_type='VAS'      AND code_number='3004010' AND DR <> 590.00   LIMIT 1;
+SELECT 'FAIL S8-G: MTP Trade Rec DR should be 3540'                   AS result FROM test_batch_preview WHERE cycle_type='MTP'      AND code_number='3004010' AND DR <> 3540.00  LIMIT 1;
+SELECT 'FAIL S8-H: Penalty Trade Rec DR should be 2360'               AS result FROM test_batch_preview WHERE cycle_type='Penalty'  AND code_number='3004010' AND DR <> 2360.00  LIMIT 1;
+SELECT 'FAIL S8-I: Credit_Note Trade Rec must be on CR side (DR/CR flipped)' AS result FROM test_batch_preview WHERE cycle_type='Credit_Note' AND code_number='3004010' AND (DR IS NOT NULL OR CR <> 11800.00) LIMIT 1;
+SELECT 'FAIL S8-J: Credit_Note Revenue must be on DR side (DR/CR flipped)'   AS result FROM test_batch_preview WHERE cycle_type='Credit_Note' AND code_number='1001010' AND (CR IS NOT NULL OR DR <> 10000.00) LIMIT 1;
+SELECT 'FAIL S8-K: balance — each cycle_type must have total DR = total CR'  AS result
+FROM (SELECT cycle_type, ROUND(SUM(COALESCE(DR,0))::NUMERIC,2) AS tDR, ROUND(SUM(COALESCE(CR,0))::NUMERIC,2) AS tCR FROM test_batch_preview GROUP BY cycle_type) t WHERE tDR <> tCR;
+
+-- Commit Scenario 8
+INSERT INTO test_submissions SELECT * FROM test_batch_preview;
+
+
+-- =============================================================================
+-- SCENARIO 9 — All verticals in one batch
+-- =============================================================================
+-- Shows the Trade Receivable and Revenue code_number for each vertical.
+-- Each vertical uses a different start_date to prevent business key conflicts
+-- when the same code_number appears across verticals (e.g. 3004030 for both
+-- New Sales D2C and New Sales Store).
+--
+-- City 50 (Hyderabad) | Normal_billing_cycle | 2 rows per vertical (Trade Rec + Revenue)
+-- 7 verticals × 2 rows = 14 rows, all ORIGINAL.
+--
+-- Vertical → Trade Rec code → Revenue code:
+--   FURLENCO_RENTAL (B2C) : 3004010 → 1001010
+--   FURLENCO_RENTAL (B2B) : 3004020 → 1001010  (only Trade Rec changes for B2B)
+--   UNLMTD                : 3004080 → 1001020
+--   New Sales - D2C       : 3004030 → 1001050
+--   New Sales - Store     : 3004030 → 1001030
+--   Refurb Sales - D2C    : 3004040 → 1001060
+--   Refurb Sales - Store  : 3004040 → 1001040
+-- =============================================================================
+
+INSERT INTO test_staging VALUES
+    -- FURLENCO_RENTAL — B2C (week Feb 3–9)
+    ('3004010','Trade Receivables - Furlenco',  11800.00, NULL,    'Hyderabad','Normal_billing_cycle','FURLENCO_RENTAL',   50,'ST005','ORG005','hyd@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',            NULL,    11800.00, 'Hyderabad','Normal_billing_cycle','FURLENCO_RENTAL',   50,'ST005','ORG005','hyd@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- FURLENCO_RENTAL — B2B: Trade Rec = 3004020 (not 3004010); Revenue = 1001010 unchanged (week Feb 10–16)
+    ('3004020','Trade Receivables - B2B',       11800.00, NULL,    'Hyderabad','Normal_billing_cycle','FURLENCO_RENTAL',   50,'ST005','ORG005','hyd@furlenco.com','2025-02-10','2025-02-16','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',            NULL,    11800.00, 'Hyderabad','Normal_billing_cycle','FURLENCO_RENTAL',   50,'ST005','ORG005','hyd@furlenco.com','2025-02-10','2025-02-16','furlenco_rental, Feb-2025'),
+    -- UNLMTD (week Feb 17–23)
+    ('3004080','Trade Receivables - Unlmtd',     5000.00, NULL,    'Hyderabad','Normal_billing_cycle','UNLMTD',            50,'ST005','ORG005','hyd@furlenco.com','2025-02-17','2025-02-23','unlmtd, Feb-2025'),
+    ('1001020','Revenue - Unlmtd',              NULL,     5000.00, 'Hyderabad','Normal_billing_cycle','UNLMTD',            50,'ST005','ORG005','hyd@furlenco.com','2025-02-17','2025-02-23','unlmtd, Feb-2025'),
+    -- New Sales - D2C (week Feb 24–Mar 2)
+    ('3004030','Trade Receivables - New Sales',  15000.00, NULL,   'Hyderabad','Normal_billing_cycle','New Sales - D2C',   50,'ST005','ORG005','hyd@furlenco.com','2025-02-24','2025-03-02','new_sales_d2c, Feb-2025'),
+    ('1001050','Revenue - New Sales - D2C',     NULL,    15000.00, 'Hyderabad','Normal_billing_cycle','New Sales - D2C',   50,'ST005','ORG005','hyd@furlenco.com','2025-02-24','2025-03-02','new_sales_d2c, Feb-2025'),
+    -- New Sales - Store (week Mar 3–9; same 3004030 Trade Rec but different vertical = different key)
+    ('3004030','Trade Receivables - New Sales',  12000.00, NULL,   'Hyderabad','Normal_billing_cycle','New Sales - Store', 50,'ST005','ORG005','hyd@furlenco.com','2025-03-03','2025-03-09','new_sales_store, Mar-2025'),
+    ('1001030','Revenue - New Sales - Store',   NULL,    12000.00, 'Hyderabad','Normal_billing_cycle','New Sales - Store', 50,'ST005','ORG005','hyd@furlenco.com','2025-03-03','2025-03-09','new_sales_store, Mar-2025'),
+    -- Refurb Sales - D2C (week Mar 10–16)
+    ('3004040','Trade Receivables - Refurb Sales', 8000.00, NULL,  'Hyderabad','Normal_billing_cycle','Refurb Sales - D2C',50,'ST005','ORG005','hyd@furlenco.com','2025-03-10','2025-03-16','refurb_d2c, Mar-2025'),
+    ('1001060','Revenue - Refurb Sales - D2C',  NULL,     8000.00, 'Hyderabad','Normal_billing_cycle','Refurb Sales - D2C',50,'ST005','ORG005','hyd@furlenco.com','2025-03-10','2025-03-16','refurb_d2c, Mar-2025'),
+    -- Refurb Sales - Store (week Mar 17–23; same 3004040 Trade Rec but different vertical = different key)
+    ('3004040','Trade Receivables - Refurb Sales', 7000.00, NULL,  'Hyderabad','Normal_billing_cycle','Refurb Sales - Store',50,'ST005','ORG005','hyd@furlenco.com','2025-03-17','2025-03-23','refurb_store, Mar-2025'),
+    ('1001040','Revenue - Refurb Sales - Store',NULL,     7000.00, 'Hyderabad','Normal_billing_cycle','Refurb Sales - Store',50,'ST005','ORG005','hyd@furlenco.com','2025-03-17','2025-03-23','refurb_store, Mar-2025');
+
+DROP TABLE IF EXISTS test_batch_preview;
+CREATE TEMP TABLE test_batch_preview AS
+WITH
+new_batch AS (SELECT 'B_'||TO_CHAR(CURRENT_DATE,'YYYYMMDD')||'_'||LPAD(CAST((SELECT COUNT(DISTINCT batch_id) FROM test_submissions WHERE submission_date=CURRENT_DATE)+1 AS VARCHAR),3,'0') AS batch_id),
+last_sent AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY code_number,city_id,vertical,cycle_type,start_date,end_date,organization_id,COALESCE(store_id,'') ORDER BY submission_date DESC,batch_id DESC) AS rn FROM test_submissions WHERE row_type IN ('ORIGINAL','RESTATEMENT')) t WHERE rn=1),
+current_data AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks FROM test_staging),
+comparison AS (
+    SELECT COALESCE(cur.code_number,ls.code_number) AS code_number,COALESCE(cur.particulars,ls.particulars) AS particulars,COALESCE(cur.city_name,ls.city_name) AS city_name,COALESCE(cur.cycle_type,ls.cycle_type) AS cycle_type,COALESCE(cur.vertical,ls.vertical) AS vertical,COALESCE(cur.city_id,ls.city_id) AS city_id,COALESCE(cur.store_id,ls.store_id) AS store_id,COALESCE(cur.organization_id,ls.organization_id) AS organization_id,COALESCE(cur.organization_email_id,ls.organization_email_id) AS organization_email_id,COALESCE(cur.start_date,ls.start_date) AS start_date,COALESCE(cur.end_date,ls.end_date) AS end_date,COALESCE(cur.remarks,ls.remarks) AS remarks,cur.DR AS cur_DR,cur.CR AS cur_CR,ls.DR AS old_DR,ls.CR AS old_CR,ls.batch_id AS last_batch_id,
+    CASE WHEN ls.code_number IS NULL THEN 'ORIGINAL' WHEN cur.code_number IS NULL THEN 'REVERSAL_ONLY' WHEN ROUND(COALESCE(cur.DR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.DR,0)::NUMERIC,4) OR ROUND(COALESCE(cur.CR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.CR,0)::NUMERIC,4) THEN 'CORRECTION' ELSE 'UNCHANGED' END AS action
+    FROM current_data cur FULL OUTER JOIN last_sent ls ON cur.code_number=ls.code_number AND cur.city_id=ls.city_id AND cur.vertical=ls.vertical AND cur.cycle_type=ls.cycle_type AND cur.start_date=ls.start_date AND cur.end_date=ls.end_date AND cur.organization_id=ls.organization_id AND COALESCE(cur.store_id,'')=COALESCE(ls.store_id,'')
+),
+batch_bounds AS (SELECT MIN(start_date) AS cycle_start,MAX(start_date) AS cycle_end FROM comparison WHERE action IN ('ORIGINAL','REVERSAL_ONLY','CORRECTION')),
+delta_date AS (SELECT COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN start_date END),CURRENT_DATE) AS start_date, COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN end_date END),CURRENT_DATE) AS end_date FROM comparison),
+output_rows AS (
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE AS submission_date,bb.cycle_start,bb.cycle_end,'ORIGINAL'::VARCHAR AS row_type,NULL::VARCHAR AS reference_batch_id,NULL::DATE AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='ORIGINAL'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.old_CR AS DR,cmp.old_DR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'REVERSAL'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='REVERSAL_ONLY'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'RESTATEMENT'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='CORRECTION'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,CASE WHEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0)>0 THEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0) WHEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0)>0 THEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0) ELSE NULL END AS DR,CASE WHEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0)>0 THEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0) WHEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0)>0 THEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0) ELSE NULL END AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,dd.start_date,dd.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'CORRECTION_DELTA'::VARCHAR,cmp.last_batch_id,cmp.start_date AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb CROSS JOIN delta_date dd WHERE cmp.action='CORRECTION'
+)
+SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id,submission_date,cycle_start,cycle_end,row_type,reference_batch_id,correction_period FROM output_rows;
+
+SELECT '--- Scenario 9 output: All verticals ---' AS scenario;
+SELECT vertical, code_number, particulars, DR, CR, row_type, start_date
+FROM test_batch_preview
+ORDER BY vertical, start_date, CASE WHEN DR IS NOT NULL THEN 0 ELSE 1 END;
+
+-- ASSERTIONS
+SELECT 'FAIL S9-A: expected 14 rows, got '                              || COUNT(*) AS result FROM test_batch_preview HAVING COUNT(*) <> 14;
+SELECT 'FAIL S9-B: expected all ORIGINAL rows'                          AS result FROM test_batch_preview WHERE row_type <> 'ORIGINAL' LIMIT 1;
+SELECT 'FAIL S9-C: FURLENCO_RENTAL B2C must use Trade Rec 3004010'      AS result FROM test_batch_preview WHERE vertical='FURLENCO_RENTAL' AND start_date='2025-02-03' AND code_number NOT IN ('3004010','1001010') LIMIT 1;
+SELECT 'FAIL S9-D: B2B must use Trade Rec 3004020 (not 3004010)'        AS result FROM test_batch_preview WHERE vertical='FURLENCO_RENTAL' AND start_date='2025-02-10' AND code_number='3004010' LIMIT 1;
+SELECT 'FAIL S9-E: B2B Trade Rec 3004020 not found'                     AS result FROM test_batch_preview WHERE vertical='FURLENCO_RENTAL' AND start_date='2025-02-10' AND code_number='3004020' HAVING COUNT(*)=0;
+SELECT 'FAIL S9-F: UNLMTD must use Trade Rec 3004080 and Revenue 1001020' AS result FROM test_batch_preview WHERE vertical='UNLMTD' AND code_number NOT IN ('3004080','1001020') LIMIT 1;
+SELECT 'FAIL S9-G: New Sales D2C must use Revenue 1001050'              AS result FROM test_batch_preview WHERE vertical='New Sales - D2C'    AND code_number='1001050' HAVING COUNT(*)=0;
+SELECT 'FAIL S9-H: New Sales Store must use Revenue 1001030'            AS result FROM test_batch_preview WHERE vertical='New Sales - Store'   AND code_number='1001030' HAVING COUNT(*)=0;
+SELECT 'FAIL S9-I: Refurb Sales D2C must use Revenue 1001060'           AS result FROM test_batch_preview WHERE vertical='Refurb Sales - D2C'  AND code_number='1001060' HAVING COUNT(*)=0;
+SELECT 'FAIL S9-J: Refurb Sales Store must use Revenue 1001040'         AS result FROM test_batch_preview WHERE vertical='Refurb Sales - Store' AND code_number='1001040' HAVING COUNT(*)=0;
+SELECT 'FAIL S9-K: New Sales D2C and Store share Trade Rec 3004030 but are separate rows (different vertical)' AS result
+FROM test_batch_preview WHERE code_number='3004030' HAVING COUNT(*) <> 2;
+
+-- Commit Scenario 9
+INSERT INTO test_submissions SELECT * FROM test_batch_preview;
+
+
+-- =============================================================================
+-- SCENARIO 10 — Inter-state vs intra-state GST
+-- =============================================================================
+-- Shows that IGST (inter-state) and CGST+SGST (intra-state) use different
+-- ledger codes, and that only one tax type appears per row — never both.
+--
+-- City 60 (Pune)    — inter-state: IGST 18% only  (code 3006350)
+--   taxable=10,000 | igst=1,800 | post-tax=11,800 → 3 rows
+--
+-- City 70 (Kolkata) — intra-state: CGST 9% + SGST 9% (codes 3006270 + 3006310)
+--   taxable=10,000 | cgst=900 | sgst=900 | post-tax=11,800 → 4 rows
+--
+-- Total: 7 rows, all ORIGINAL.
+-- Both cities balance to 11,800 DR = 11,800 CR.
+-- =============================================================================
+
+INSERT INTO test_staging VALUES
+    -- Inter-state: Pune (city 60) — IGST 18% only, no CGST/SGST
+    ('3004010','Trade Receivables - Furlenco', 11800.00, NULL,    'Pune',    'Normal_billing_cycle','FURLENCO_RENTAL',60,'ST006','ORG006','pune@furlenco.com',   '2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',           NULL,    10000.00, 'Pune',    'Normal_billing_cycle','FURLENCO_RENTAL',60,'ST006','ORG006','pune@furlenco.com',   '2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006350','Output IGST 18%',              NULL,     1800.00, 'Pune',    'Normal_billing_cycle','FURLENCO_RENTAL',60,'ST006','ORG006','pune@furlenco.com',   '2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    -- Intra-state: Kolkata (city 70) — CGST 9% + SGST 9%, no IGST
+    ('3004010','Trade Receivables - Furlenco', 11800.00, NULL,    'Kolkata', 'Normal_billing_cycle','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('1001010','Revenue - Furlenco',           NULL,    10000.00, 'Kolkata', 'Normal_billing_cycle','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006270','Output CGST 9%',               NULL,      900.00, 'Kolkata', 'Normal_billing_cycle','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025'),
+    ('3006310','Output SGST 9%',               NULL,      900.00, 'Kolkata', 'Normal_billing_cycle','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-03','2025-02-09','furlenco_rental, Feb-2025');
+
+DROP TABLE IF EXISTS test_batch_preview;
+CREATE TEMP TABLE test_batch_preview AS
+WITH
+new_batch AS (SELECT 'B_'||TO_CHAR(CURRENT_DATE,'YYYYMMDD')||'_'||LPAD(CAST((SELECT COUNT(DISTINCT batch_id) FROM test_submissions WHERE submission_date=CURRENT_DATE)+1 AS VARCHAR),3,'0') AS batch_id),
+last_sent AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY code_number,city_id,vertical,cycle_type,start_date,end_date,organization_id,COALESCE(store_id,'') ORDER BY submission_date DESC,batch_id DESC) AS rn FROM test_submissions WHERE row_type IN ('ORIGINAL','RESTATEMENT')) t WHERE rn=1),
+current_data AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks FROM test_staging),
+comparison AS (
+    SELECT COALESCE(cur.code_number,ls.code_number) AS code_number,COALESCE(cur.particulars,ls.particulars) AS particulars,COALESCE(cur.city_name,ls.city_name) AS city_name,COALESCE(cur.cycle_type,ls.cycle_type) AS cycle_type,COALESCE(cur.vertical,ls.vertical) AS vertical,COALESCE(cur.city_id,ls.city_id) AS city_id,COALESCE(cur.store_id,ls.store_id) AS store_id,COALESCE(cur.organization_id,ls.organization_id) AS organization_id,COALESCE(cur.organization_email_id,ls.organization_email_id) AS organization_email_id,COALESCE(cur.start_date,ls.start_date) AS start_date,COALESCE(cur.end_date,ls.end_date) AS end_date,COALESCE(cur.remarks,ls.remarks) AS remarks,cur.DR AS cur_DR,cur.CR AS cur_CR,ls.DR AS old_DR,ls.CR AS old_CR,ls.batch_id AS last_batch_id,
+    CASE WHEN ls.code_number IS NULL THEN 'ORIGINAL' WHEN cur.code_number IS NULL THEN 'REVERSAL_ONLY' WHEN ROUND(COALESCE(cur.DR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.DR,0)::NUMERIC,4) OR ROUND(COALESCE(cur.CR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.CR,0)::NUMERIC,4) THEN 'CORRECTION' ELSE 'UNCHANGED' END AS action
+    FROM current_data cur FULL OUTER JOIN last_sent ls ON cur.code_number=ls.code_number AND cur.city_id=ls.city_id AND cur.vertical=ls.vertical AND cur.cycle_type=ls.cycle_type AND cur.start_date=ls.start_date AND cur.end_date=ls.end_date AND cur.organization_id=ls.organization_id AND COALESCE(cur.store_id,'')=COALESCE(ls.store_id,'')
+),
+batch_bounds AS (SELECT MIN(start_date) AS cycle_start,MAX(start_date) AS cycle_end FROM comparison WHERE action IN ('ORIGINAL','REVERSAL_ONLY','CORRECTION')),
+delta_date AS (SELECT COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN start_date END),CURRENT_DATE) AS start_date, COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN end_date END),CURRENT_DATE) AS end_date FROM comparison),
+output_rows AS (
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE AS submission_date,bb.cycle_start,bb.cycle_end,'ORIGINAL'::VARCHAR AS row_type,NULL::VARCHAR AS reference_batch_id,NULL::DATE AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='ORIGINAL'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.old_CR AS DR,cmp.old_DR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'REVERSAL'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='REVERSAL_ONLY'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'RESTATEMENT'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='CORRECTION'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,CASE WHEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0)>0 THEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0) WHEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0)>0 THEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0) ELSE NULL END AS DR,CASE WHEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0)>0 THEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0) WHEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0)>0 THEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0) ELSE NULL END AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,dd.start_date,dd.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'CORRECTION_DELTA'::VARCHAR,cmp.last_batch_id,cmp.start_date AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb CROSS JOIN delta_date dd WHERE cmp.action='CORRECTION'
+)
+SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id,submission_date,cycle_start,cycle_end,row_type,reference_batch_id,correction_period FROM output_rows;
+
+SELECT '--- Scenario 10 output: Inter-state (IGST) vs Intra-state (CGST+SGST) ---' AS scenario;
+SELECT city_name, code_number, particulars, DR, CR, row_type
+FROM test_batch_preview
+ORDER BY city_name, CASE WHEN DR IS NOT NULL THEN 0 ELSE 1 END, code_number;
+
+-- ASSERTIONS
+SELECT 'FAIL S10-A: expected 7 rows, got '                                         || COUNT(*) AS result FROM test_batch_preview HAVING COUNT(*) <> 7;
+SELECT 'FAIL S10-B: expected all ORIGINAL rows'                                    AS result FROM test_batch_preview WHERE row_type <> 'ORIGINAL' LIMIT 1;
+SELECT 'FAIL S10-C: Pune (inter-state) must have IGST row 3006350 with CR=1800'   AS result FROM test_batch_preview WHERE city_id=60 AND code_number='3006350' AND CR <> 1800.00 LIMIT 1;
+SELECT 'FAIL S10-D: Pune (inter-state) must NOT have CGST or SGST rows'           AS result FROM test_batch_preview WHERE city_id=60 AND code_number IN ('3006270','3006310') LIMIT 1;
+SELECT 'FAIL S10-E: Kolkata (intra-state) must have CGST 3006270 with CR=900'     AS result FROM test_batch_preview WHERE city_id=70 AND code_number='3006270' AND CR <> 900.00 LIMIT 1;
+SELECT 'FAIL S10-F: Kolkata (intra-state) must have SGST 3006310 with CR=900'     AS result FROM test_batch_preview WHERE city_id=70 AND code_number='3006310' AND CR <> 900.00 LIMIT 1;
+SELECT 'FAIL S10-G: Kolkata (intra-state) must NOT have IGST row'                 AS result FROM test_batch_preview WHERE city_id=70 AND code_number='3006350' LIMIT 1;
+SELECT 'FAIL S10-H: balance — both cities must have total DR = total CR'           AS result
+FROM (SELECT city_id, ROUND(SUM(COALESCE(DR,0))::NUMERIC,2) AS tDR, ROUND(SUM(COALESCE(CR,0))::NUMERIC,2) AS tCR FROM test_batch_preview GROUP BY city_id) t WHERE tDR <> tCR;
+
+-- Commit Scenario 10
+INSERT INTO test_submissions SELECT * FROM test_batch_preview;
+
+
+-- =============================================================================
+-- SCENARIO 11 — Deferral: cross-month billing cycle
+-- =============================================================================
+-- Shows the 4 journal entries generated when a billing cycle spans two months.
+-- Revenue is split proportionally using average-month-length arithmetic.
+--
+-- Billing cycle: Feb 20 – Mar 19, 2025 (spans Feb → Mar)
+-- Taxable: 6,000.00
+--
+-- Calculation (Feb is billing start month → uses +2.5 day adjustment):
+--   total_days        = (Mar 19 – Feb 20 + 1) + 2.5 = 28 + 2.5 = 30.5
+--   start_day         = 20
+--   Feb portion       = ROUND((30.5 – 19) × 6000 / 30.5, 2) = ROUND(2262.30) = 2,262.30
+--   Mar portion (def) = 6000 – 2262.30 = 3,737.70
+--
+-- 4 journal entries (cycle_type = 'Deferral'), city 70 (Kolkata), all ORIGINAL:
+--   Week Feb 17–23 (recognised_date = Feb 20 → Monday of that week):
+--     1001010 Revenue DR = 3737.70   (reduce Feb revenue by deferred amount)
+--     4006020 Deferred Revenue CR = 3737.70   (create liability)
+--   Week Feb 24–Mar 2 (cr_recognised_date = Mar 1 → Monday of that week):
+--     4006020 Deferred Revenue DR = 3737.70   (clear liability)
+--     1001010 Revenue CR = 3737.70   (recognise in March)
+-- =============================================================================
+
+INSERT INTO test_staging VALUES
+    -- Current month (week Feb 17–23): reduce Feb revenue, create deferred liability
+    ('1001010','Revenue - Furlenco',   3737.70, NULL,    'Kolkata','Deferral','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-17','2025-02-23','deferral current month, Feb-2025'),
+    ('4006020','Deferred Revenue',     NULL,    3737.70, 'Kolkata','Deferral','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-17','2025-02-23','deferral current month, Feb-2025'),
+    -- Next month (week Feb 24–Mar 2): clear liability, recognise revenue in March
+    ('4006020','Deferred Revenue',     3737.70, NULL,    'Kolkata','Deferral','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-24','2025-03-02','deferral next month, Mar-2025'),
+    ('1001010','Revenue - Furlenco',   NULL,    3737.70, 'Kolkata','Deferral','FURLENCO_RENTAL',70,'ST007','ORG007','kolkata@furlenco.com','2025-02-24','2025-03-02','deferral next month, Mar-2025');
+
+DROP TABLE IF EXISTS test_batch_preview;
+CREATE TEMP TABLE test_batch_preview AS
+WITH
+new_batch AS (SELECT 'B_'||TO_CHAR(CURRENT_DATE,'YYYYMMDD')||'_'||LPAD(CAST((SELECT COUNT(DISTINCT batch_id) FROM test_submissions WHERE submission_date=CURRENT_DATE)+1 AS VARCHAR),3,'0') AS batch_id),
+last_sent AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY code_number,city_id,vertical,cycle_type,start_date,end_date,organization_id,COALESCE(store_id,'') ORDER BY submission_date DESC,batch_id DESC) AS rn FROM test_submissions WHERE row_type IN ('ORIGINAL','RESTATEMENT')) t WHERE rn=1),
+current_data AS (SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks FROM test_staging),
+comparison AS (
+    SELECT COALESCE(cur.code_number,ls.code_number) AS code_number,COALESCE(cur.particulars,ls.particulars) AS particulars,COALESCE(cur.city_name,ls.city_name) AS city_name,COALESCE(cur.cycle_type,ls.cycle_type) AS cycle_type,COALESCE(cur.vertical,ls.vertical) AS vertical,COALESCE(cur.city_id,ls.city_id) AS city_id,COALESCE(cur.store_id,ls.store_id) AS store_id,COALESCE(cur.organization_id,ls.organization_id) AS organization_id,COALESCE(cur.organization_email_id,ls.organization_email_id) AS organization_email_id,COALESCE(cur.start_date,ls.start_date) AS start_date,COALESCE(cur.end_date,ls.end_date) AS end_date,COALESCE(cur.remarks,ls.remarks) AS remarks,cur.DR AS cur_DR,cur.CR AS cur_CR,ls.DR AS old_DR,ls.CR AS old_CR,ls.batch_id AS last_batch_id,
+    CASE WHEN ls.code_number IS NULL THEN 'ORIGINAL' WHEN cur.code_number IS NULL THEN 'REVERSAL_ONLY' WHEN ROUND(COALESCE(cur.DR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.DR,0)::NUMERIC,4) OR ROUND(COALESCE(cur.CR,0)::NUMERIC,4)<>ROUND(COALESCE(ls.CR,0)::NUMERIC,4) THEN 'CORRECTION' ELSE 'UNCHANGED' END AS action
+    FROM current_data cur FULL OUTER JOIN last_sent ls ON cur.code_number=ls.code_number AND cur.city_id=ls.city_id AND cur.vertical=ls.vertical AND cur.cycle_type=ls.cycle_type AND cur.start_date=ls.start_date AND cur.end_date=ls.end_date AND cur.organization_id=ls.organization_id AND COALESCE(cur.store_id,'')=COALESCE(ls.store_id,'')
+),
+batch_bounds AS (SELECT MIN(start_date) AS cycle_start,MAX(start_date) AS cycle_end FROM comparison WHERE action IN ('ORIGINAL','REVERSAL_ONLY','CORRECTION')),
+delta_date AS (SELECT COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN start_date END),CURRENT_DATE) AS start_date, COALESCE(MAX(CASE WHEN action='ORIGINAL' THEN end_date END),CURRENT_DATE) AS end_date FROM comparison),
+output_rows AS (
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE AS submission_date,bb.cycle_start,bb.cycle_end,'ORIGINAL'::VARCHAR AS row_type,NULL::VARCHAR AS reference_batch_id,NULL::DATE AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='ORIGINAL'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.old_CR AS DR,cmp.old_DR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'REVERSAL'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='REVERSAL_ONLY'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,cmp.cur_DR AS DR,cmp.cur_CR AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,cmp.start_date,cmp.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'RESTATEMENT'::VARCHAR,cmp.last_batch_id,NULL::DATE FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb WHERE cmp.action='CORRECTION'
+    UNION ALL
+    SELECT cmp.code_number,cmp.particulars,CASE WHEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0)>0 THEN COALESCE(cmp.cur_DR,0)-COALESCE(cmp.old_DR,0) WHEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0)>0 THEN COALESCE(cmp.old_CR,0)-COALESCE(cmp.cur_CR,0) ELSE NULL END AS DR,CASE WHEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0)>0 THEN COALESCE(cmp.cur_CR,0)-COALESCE(cmp.old_CR,0) WHEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0)>0 THEN COALESCE(cmp.old_DR,0)-COALESCE(cmp.cur_DR,0) ELSE NULL END AS CR,cmp.city_name,cmp.cycle_type,cmp.vertical,cmp.city_id,cmp.store_id,cmp.organization_id,cmp.organization_email_id,dd.start_date,dd.end_date,cmp.remarks,nb.batch_id,CURRENT_DATE,bb.cycle_start,bb.cycle_end,'CORRECTION_DELTA'::VARCHAR,cmp.last_batch_id,cmp.start_date AS correction_period FROM comparison cmp CROSS JOIN new_batch nb CROSS JOIN batch_bounds bb CROSS JOIN delta_date dd WHERE cmp.action='CORRECTION'
+)
+SELECT code_number,particulars,DR,CR,city_name,cycle_type,vertical,city_id,store_id,organization_id,organization_email_id,start_date,end_date,remarks,batch_id,submission_date,cycle_start,cycle_end,row_type,reference_batch_id,correction_period FROM output_rows;
+
+SELECT '--- Scenario 11 output: Deferral (cross-month billing) ---' AS scenario;
+SELECT start_date, end_date, code_number, particulars, DR, CR, cycle_type, row_type
+FROM test_batch_preview
+WHERE cycle_type = 'Deferral'
+ORDER BY start_date, CASE WHEN DR IS NOT NULL THEN 0 ELSE 1 END, code_number;
+
+-- ASSERTIONS
+SELECT 'FAIL S11-A: expected 4 rows, got '                                        || COUNT(*) AS result FROM test_batch_preview WHERE cycle_type='Deferral' HAVING COUNT(*) <> 4;
+SELECT 'FAIL S11-B: expected all ORIGINAL rows'                                   AS result FROM test_batch_preview WHERE cycle_type='Deferral' AND row_type <> 'ORIGINAL' LIMIT 1;
+SELECT 'FAIL S11-C: current month — Revenue (1001010) must be on DR side'         AS result FROM test_batch_preview WHERE cycle_type='Deferral' AND code_number='1001010' AND start_date='2025-02-17' AND (CR IS NOT NULL OR DR <> 3737.70) LIMIT 1;
+SELECT 'FAIL S11-D: current month — Deferred Revenue (4006020) must be on CR side' AS result FROM test_batch_preview WHERE cycle_type='Deferral' AND code_number='4006020' AND start_date='2025-02-17' AND (DR IS NOT NULL OR CR <> 3737.70) LIMIT 1;
+SELECT 'FAIL S11-E: next month — Deferred Revenue (4006020) must be on DR side'  AS result FROM test_batch_preview WHERE cycle_type='Deferral' AND code_number='4006020' AND start_date='2025-02-24' AND (CR IS NOT NULL OR DR <> 3737.70) LIMIT 1;
+SELECT 'FAIL S11-F: next month — Revenue (1001010) must be on CR side'           AS result FROM test_batch_preview WHERE cycle_type='Deferral' AND code_number='1001010' AND start_date='2025-02-24' AND (DR IS NOT NULL OR CR <> 3737.70) LIMIT 1;
+SELECT 'FAIL S11-G: all deferral amounts must be 3737.70'                        AS result FROM test_batch_preview WHERE cycle_type='Deferral' AND COALESCE(DR,CR) <> 3737.70 LIMIT 1;
+SELECT 'FAIL S11-H: balance — each week must have DR = CR'                        AS result
+FROM (SELECT start_date, ROUND(SUM(COALESCE(DR,0))::NUMERIC,2) AS tDR, ROUND(SUM(COALESCE(CR,0))::NUMERIC,2) AS tCR FROM test_batch_preview WHERE cycle_type='Deferral' GROUP BY start_date) t WHERE tDR <> tCR;
+
+-- Commit Scenario 11
+INSERT INTO test_submissions SELECT * FROM test_batch_preview;
+
+
+-- =============================================================================
+-- SCENARIO SUMMARY — what each scenario produced
+-- =============================================================================
+
+SELECT '--- Full scenario coverage summary (Scenarios 8–11) ---' AS summary;
+SELECT
+    batch_id,
+    row_type,
+    cycle_type,
+    vertical,
+    COUNT(*)                       AS rows,
+    ROUND(SUM(COALESCE(DR,0))::NUMERIC,2) AS total_DR,
+    ROUND(SUM(COALESCE(CR,0))::NUMERIC,2) AS total_CR
+FROM test_submissions
+GROUP BY batch_id, row_type, cycle_type, vertical
+ORDER BY batch_id, cycle_type, vertical, row_type;
+
+
+-- =============================================================================
 -- CLEANUP
 -- =============================================================================
 DROP TABLE IF EXISTS test_batch_preview;
