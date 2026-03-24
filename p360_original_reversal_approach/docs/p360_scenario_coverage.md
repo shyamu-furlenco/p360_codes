@@ -124,13 +124,33 @@
 
 ### 1.5 Multiple Corrections Across Batches
 
-| Batch | Submitted as | DR (Trade Rec) | CR (Revenue) |
-|---|---|---|---|
-| B_20250413_001 | ORIGINAL | 11,800 | 10,000 |
-| B_20250420_001 | CORRECTION_DELTA | +2,360 (DR) | +2,000 (CR) — now 12,000 total |
-| B_20250427_001 | CORRECTION_DELTA | 2,360 flipped to CR | 2,000 flipped to DR — back to 10,000 |
+The delta is always computed against the **last known state** — not against the original. Each time a CORRECTION is committed, the state table is updated to the new full amounts (RESTATEMENT). The next correction computes its delta against that updated state.
 
-> Each delta is computed against the latest internal state — never against the original. Corrections never compound.
+**Batch 1 — ORIGINAL**
+
+Staging shows DR 11,800 / CR 10,000. State has no record for this key.
+
+→ Sent to P360 as ORIGINAL. State updated to: DR 11,800 / CR 10,000.
+
+**Batch 2 — amounts revised upward (₹10,000 → ₹12,000)**
+
+Staging now shows DR 14,160 / CR 12,000. State has DR 11,800 / CR 10,000.
+
+Delta = new − old → DR +2,360 / CR +2,000. Both are positive increases so they stay on their own side.
+
+→ Sent to P360 as CORRECTION_DELTA: DR 2,360 / CR 2,000. State updated to: DR 14,160 / CR 12,000.
+
+**Batch 3 — amounts revised back down (₹12,000 → ₹10,000)**
+
+Staging now shows DR 11,800 / CR 10,000. State has DR 14,160 / CR 12,000 (from batch 2 — not the original).
+
+Delta vs state:
+- Trade Rec: DR decreased by 2,360 → negative delta → **flipped to CR 2,360**
+- Revenue: CR decreased by 2,000 → negative delta → **flipped to DR 2,000**
+
+→ Sent to P360 as CORRECTION_DELTA: DR 2,000 (Revenue side) / CR 2,360 (Trade Rec side). State updated to: DR 11,800 / CR 10,000.
+
+> **Key point:** Batch 3's delta was computed against batch 2's state (DR 14,160 / CR 12,000), not against the batch 1 original. This is why corrections never compound — each delta is always the gap between the current staging truth and the last thing P360 was told.
 
 ---
 
@@ -204,12 +224,12 @@ Triggered by early return before minimum tenure. Identified via:
 
 | code_number | particulars | DR | CR | cycle_type |
 |---|---|---|---|---|
-| 3004010 | Trade Receivables - Furlenco | — | 11,800 | Credit_Note |
-| 1001010 | Revenue - Furlenco | 10,000 | — | Credit_Note |
-| 3006270 | Output CGST 9% | 900 | — | Credit_Note |
-| 3006310 | Output SGST 9% | 900 | — | Credit_Note |
+| 3004010 | Trade Receivables - Furlenco | 11,800 | — | Credit_Note |
+| 1001010 | Revenue - Furlenco | — | 10,000 | Credit_Note |
+| 3006270 | Output CGST 9% | — | 900 | Credit_Note |
+| 3006310 | Output SGST 9% | — | 900 | Credit_Note |
 
-> DR/CR are flipped relative to normal revenue — it is a reversal of revenue.
+> The journal structure is the same as normal revenue (Trade Rec → DR, Revenue → CR). The `cycle_type` is `Credit_Note` so it can be identified separately in P360. Amounts are sourced from `invoice_cycles.monetary_components`.
 
 ---
 
