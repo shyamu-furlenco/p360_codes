@@ -143,6 +143,7 @@ filtered_entities AS (
         i.id AS entity_id,
         'ITEM' AS entity_type,
         CASE
+            WHEN (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) THEN 'Sale-B2B'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'New Sales - D2C'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source = 'OFFLINE_STORE'                 THEN 'New Sales - Store'
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
@@ -170,6 +171,7 @@ filtered_entities AS (
         a.id AS entity_id,
         'ATTACHMENT' AS entity_type,
         CASE
+            WHEN (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) THEN 'Sale-B2B'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'New Sales - D2C'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source = 'OFFLINE_STORE'                 THEN 'New Sales - Store'
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
@@ -197,6 +199,7 @@ filtered_entities AS (
         vas.id AS entity_id,
         'VALUE_ADDED_SERVICE' AS entity_type,
         CASE
+            WHEN (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) THEN 'Sale-B2B'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'New Sales - D2C'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source = 'OFFLINE_STORE'                 THEN 'New Sales - Store'
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
@@ -227,6 +230,7 @@ filtered_entities AS (
         vas.id AS entity_id,
         'VALUE_ADDED_SERVICE' AS entity_type,
         CASE
+            WHEN (json_extract_path_text(ord.user_details,'displayId') IN (SELECT fur_id FROM b2b_users)) THEN 'Sale-B2B'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'New Sales - D2C'
             WHEN p.line_of_product = 'BUY_NEW'         AND ord.source = 'OFFLINE_STORE'                 THEN 'New Sales - Store'
             WHEN p.line_of_product = 'BUY_REFURBISHED' AND ord.source IN ('ANDROID','IOS','MWEB','WEB') THEN 'Refurb Sales - D2C'
@@ -338,7 +342,7 @@ settlements AS (
         END AS cycle_type,
 
         -- recognised_date: Sale uses start_date only; Rental/UNLMTD use LEAST logic
-        CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store')
+        CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B')
              THEN rr.start_date
              ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes')
         END AS recognised_date,
@@ -371,13 +375,13 @@ settlements AS (
         rr.end_date   AS billing_end_date,
 
         -- Week boundaries (Monday-Sunday) derived from recognised_date
-        CASE WHEN EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE) = 0
-             THEN (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - 6
-             ELSE (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE)::INTEGER + 1
+        CASE WHEN EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE) = 0
+             THEN (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - 6
+             ELSE (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE)::INTEGER + 1
         END AS week_start_date,
-        CASE WHEN EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE) = 0
-             THEN (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE
-             ELSE (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE)::INTEGER + 7
+        CASE WHEN EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE) = 0
+             THEN (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE
+             ELSE (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE - EXTRACT(DOW FROM (CASE WHEN fe.vertical IN ('New Sales - D2C', 'New Sales - Store', 'Refurb Sales - D2C', 'Refurb Sales - Store', 'Sale-B2B') THEN rr.start_date ELSE LEAST(rr.start_date, rr.recognised_at + INTERVAL '330 minutes') END)::DATE)::INTEGER + 7
         END AS week_end_date,
         fe.dispatch_fc_id,
         fe.is_b2b
@@ -667,6 +671,7 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         CASE
+            WHEN is_b2b = TRUE                      THEN '1001150'
             WHEN vertical = 'FURLENCO_RENTAL'       THEN '1001010'
             WHEN vertical = 'UNLMTD'                THEN '1001020'
             WHEN vertical = 'New Sales - D2C'       THEN '1001050'
@@ -676,6 +681,7 @@ unpivoted_data AS (
             ELSE '0000000'
         END AS code_number,
         CASE
+            WHEN is_b2b = TRUE                      THEN 'Revenue - B2B Sales'
             WHEN vertical = 'FURLENCO_RENTAL'       THEN 'Revenue - Furlenco'
             WHEN vertical = 'UNLMTD'                THEN 'Revenue - Unlmtd'
             WHEN vertical = 'New Sales - D2C'       THEN 'Revenue - New Sales - D2C'
@@ -745,29 +751,13 @@ unpivoted_data AS (
 
     UNION ALL
 
-    -- B2B Reversal: DR Revenue (reverse the CR from normal entry)
+    -- B2B Reversal: DR Revenue - B2B Sales (reverse the CR from normal entry)
     SELECT
         city_name, city_id, email AS organization_email_id,
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, cycle_type, recognised_date,
-        CASE
-            WHEN vertical = 'FURLENCO_RENTAL'       THEN '1001010'
-            WHEN vertical = 'UNLMTD'                THEN '1001020'
-            WHEN vertical = 'New Sales - D2C'       THEN '1001050'
-            WHEN vertical = 'New Sales - Store'     THEN '1001030'
-            WHEN vertical = 'Refurb Sales - D2C'    THEN '1001060'
-            WHEN vertical = 'Refurb Sales - Store'  THEN '1001040'
-            ELSE '0000000'
-        END AS code_number,
-        CASE
-            WHEN vertical = 'FURLENCO_RENTAL'       THEN 'Revenue - Furlenco'
-            WHEN vertical = 'UNLMTD'                THEN 'Revenue - Unlmtd'
-            WHEN vertical = 'New Sales - D2C'       THEN 'Revenue - New Sales - D2C'
-            WHEN vertical = 'New Sales - Store'     THEN 'Revenue - New Sales - Store'
-            WHEN vertical = 'Refurb Sales - D2C'    THEN 'Revenue - Refurb Sales - D2C'
-            WHEN vertical = 'Refurb Sales - Store'  THEN 'Revenue - Refurb Sales - Store'
-            ELSE 'Revenue - Unknown'
-        END AS particulars,
+        '1001150' AS code_number,
+        'Revenue - B2B Sales' AS particulars,
         sum_of_taxable_amount::FLOAT AS DR, NULL::FLOAT AS CR,
         1 AS row_order, 6 AS sub_order
     FROM agg_view
@@ -827,6 +817,7 @@ unpivoted_data AS (
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, 'Deferral' AS cycle_type, recognised_date,
         CASE
+            WHEN vertical = 'Sale-B2B'              THEN '1001150'
             WHEN vertical = 'FURLENCO_RENTAL'       THEN '1001010'
             WHEN vertical = 'UNLMTD'                THEN '1001020'
             WHEN vertical = 'New Sales - D2C'       THEN '1001050'
@@ -836,6 +827,7 @@ unpivoted_data AS (
             ELSE '0000000'
         END AS code_number,
         CASE
+            WHEN vertical = 'Sale-B2B'              THEN 'Revenue - B2B Sales'
             WHEN vertical = 'FURLENCO_RENTAL'       THEN 'Revenue - Furlenco'
             WHEN vertical = 'UNLMTD'                THEN 'Revenue - Unlmtd'
             WHEN vertical = 'New Sales - D2C'       THEN 'Revenue - New Sales - D2C'
@@ -882,6 +874,7 @@ unpivoted_data AS (
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, 'Deferral' AS cycle_type, cr_recognised_date AS recognised_date,
         CASE
+            WHEN vertical = 'Sale-B2B'              THEN '1001150'
             WHEN vertical = 'FURLENCO_RENTAL'       THEN '1001010'
             WHEN vertical = 'UNLMTD'                THEN '1001020'
             WHEN vertical = 'New Sales - D2C'       THEN '1001050'
@@ -891,6 +884,7 @@ unpivoted_data AS (
             ELSE '0000000'
         END AS code_number,
         CASE
+            WHEN vertical = 'Sale-B2B'              THEN 'Revenue - B2B Sales'
             WHEN vertical = 'FURLENCO_RENTAL'       THEN 'Revenue - Furlenco'
             WHEN vertical = 'UNLMTD'                THEN 'Revenue - Unlmtd'
             WHEN vertical = 'New Sales - D2C'       THEN 'Revenue - New Sales - D2C'
