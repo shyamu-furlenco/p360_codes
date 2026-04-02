@@ -655,7 +655,8 @@ unpivoted_data AS (
             WHEN vertical IN ('Refurb Sales - D2C', 'Refurb Sales - Store')               THEN 'Trade Receivables - Refurb Sales'
             ELSE 'Trade Receivables - Unknown'
         END AS particulars,
-        sum_of_total::FLOAT AS DR, NULL::FLOAT AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_total::FLOAT END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_total::FLOAT ELSE NULL::FLOAT END AS CR,
         1 AS row_order, 0 AS sub_order
     FROM agg_view
 
@@ -683,7 +684,8 @@ unpivoted_data AS (
             WHEN vertical = 'Refurb Sales - Store'  THEN 'Revenue - Refurb Sales - Store'
             ELSE 'Revenue - Unknown'
         END AS particulars,
-        NULL::FLOAT AS DR, sum_of_taxable_amount::FLOAT AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_taxable_amount::FLOAT ELSE NULL::FLOAT END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_taxable_amount::FLOAT END AS CR,
         1 AS row_order, 1 AS sub_order
     FROM agg_view
 
@@ -694,7 +696,8 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         cgst_ledger_code AS code_number, cgst_ledger_name AS particulars,
-        NULL::FLOAT AS DR, sum_of_cgst_amount::FLOAT AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_cgst_amount::FLOAT ELSE NULL::FLOAT END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_cgst_amount::FLOAT END AS CR,
         1 AS row_order, 2 AS sub_order
     FROM agg_view
     WHERE sum_of_cgst_amount > 0
@@ -706,7 +709,8 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         sgst_ledger_code AS code_number, sgst_ledger_name AS particulars,
-        NULL::FLOAT AS DR, sum_of_sgst_amount::FLOAT AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_sgst_amount::FLOAT ELSE NULL::FLOAT END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_sgst_amount::FLOAT END AS CR,
         1 AS row_order, 3 AS sub_order
     FROM agg_view
     WHERE sum_of_sgst_amount > 0
@@ -718,10 +722,102 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         igst_ledger_code AS code_number, igst_ledger_name AS particulars,
-        NULL::FLOAT AS DR, sum_of_igst_amount::FLOAT AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_igst_amount::FLOAT ELSE NULL::FLOAT END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_igst_amount::FLOAT END AS CR,
         1 AS row_order, 4 AS sub_order
     FROM agg_view
     WHERE sum_of_igst_amount > 0
+
+    UNION ALL
+
+    -- B2B Reversal: CR Trade Receivables - B2B (reverse the DR from normal entry)
+    SELECT
+        city_name, city_id, email AS organization_email_id,
+        p360_store_id AS store_id, p360_organisation_id AS organization_id,
+        vertical, cycle_type, recognised_date,
+        '3004020' AS code_number,
+        'Trade Receivables - B2B' AS particulars,
+        NULL::FLOAT AS DR, sum_of_total::FLOAT AS CR,
+        1 AS row_order, 5 AS sub_order
+    FROM agg_view
+    WHERE is_b2b = TRUE
+      AND cycle_type <> 'Credit_Note'
+
+    UNION ALL
+
+    -- B2B Reversal: DR Revenue (reverse the CR from normal entry)
+    SELECT
+        city_name, city_id, email AS organization_email_id,
+        p360_store_id AS store_id, p360_organisation_id AS organization_id,
+        vertical, cycle_type, recognised_date,
+        CASE
+            WHEN vertical = 'FURLENCO_RENTAL'       THEN '1001010'
+            WHEN vertical = 'UNLMTD'                THEN '1001020'
+            WHEN vertical = 'New Sales - D2C'       THEN '1001050'
+            WHEN vertical = 'New Sales - Store'     THEN '1001030'
+            WHEN vertical = 'Refurb Sales - D2C'    THEN '1001060'
+            WHEN vertical = 'Refurb Sales - Store'  THEN '1001040'
+            ELSE '0000000'
+        END AS code_number,
+        CASE
+            WHEN vertical = 'FURLENCO_RENTAL'       THEN 'Revenue - Furlenco'
+            WHEN vertical = 'UNLMTD'                THEN 'Revenue - Unlmtd'
+            WHEN vertical = 'New Sales - D2C'       THEN 'Revenue - New Sales - D2C'
+            WHEN vertical = 'New Sales - Store'     THEN 'Revenue - New Sales - Store'
+            WHEN vertical = 'Refurb Sales - D2C'    THEN 'Revenue - Refurb Sales - D2C'
+            WHEN vertical = 'Refurb Sales - Store'  THEN 'Revenue - Refurb Sales - Store'
+            ELSE 'Revenue - Unknown'
+        END AS particulars,
+        sum_of_taxable_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        1 AS row_order, 6 AS sub_order
+    FROM agg_view
+    WHERE is_b2b = TRUE
+      AND cycle_type <> 'Credit_Note'
+
+    UNION ALL
+
+    -- B2B Reversal: DR CGST (reverse the CR from normal entry)
+    SELECT
+        city_name, city_id, email AS organization_email_id,
+        p360_store_id AS store_id, p360_organisation_id AS organization_id,
+        vertical, cycle_type, recognised_date,
+        cgst_ledger_code AS code_number, cgst_ledger_name AS particulars,
+        sum_of_cgst_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        1 AS row_order, 7 AS sub_order
+    FROM agg_view
+    WHERE is_b2b = TRUE
+      AND cycle_type <> 'Credit_Note'
+      AND sum_of_cgst_amount > 0
+
+    UNION ALL
+
+    -- B2B Reversal: DR SGST (reverse the CR from normal entry)
+    SELECT
+        city_name, city_id, email AS organization_email_id,
+        p360_store_id AS store_id, p360_organisation_id AS organization_id,
+        vertical, cycle_type, recognised_date,
+        sgst_ledger_code AS code_number, sgst_ledger_name AS particulars,
+        sum_of_sgst_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        1 AS row_order, 8 AS sub_order
+    FROM agg_view
+    WHERE is_b2b = TRUE
+      AND cycle_type <> 'Credit_Note'
+      AND sum_of_sgst_amount > 0
+
+    UNION ALL
+
+    -- B2B Reversal: DR IGST (reverse the CR from normal entry)
+    SELECT
+        city_name, city_id, email AS organization_email_id,
+        p360_store_id AS store_id, p360_organisation_id AS organization_id,
+        vertical, cycle_type, recognised_date,
+        igst_ledger_code AS code_number, igst_ledger_name AS particulars,
+        sum_of_igst_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        1 AS row_order, 9 AS sub_order
+    FROM agg_view
+    WHERE is_b2b = TRUE
+      AND cycle_type <> 'Credit_Note'
+      AND sum_of_igst_amount > 0
 
     UNION ALL
 
