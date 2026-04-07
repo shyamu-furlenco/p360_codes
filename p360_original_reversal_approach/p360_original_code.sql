@@ -348,15 +348,15 @@ settlements AS (
         END AS recognised_date,
 
         -- Amounts
-        json_extract_path_text(rr.monetary_components, 'taxableAmount')::FLOAT AS taxable_amount,
-        json_extract_path_text(rr.monetary_components, 'postTaxAmount')::FLOAT AS post_tax_amount,
+        json_extract_path_text(rr.monetary_components, 'taxableAmount')::DECIMAL(18,2) AS taxable_amount,
+        json_extract_path_text(rr.monetary_components, 'postTaxAmount')::DECIMAL(18,2) AS post_tax_amount,
 
         -- NCEMI discount (scans positions 0-3 in JSON array)
         CASE
-            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '0', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '0', 'amount')::FLOAT
-            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '1', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '1', 'amount')::FLOAT
-            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '2', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '2', 'amount')::FLOAT
-            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '3', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '3', 'amount')::FLOAT
+            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '0', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '0', 'amount')::DECIMAL(18,2)
+            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '1', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '1', 'amount')::DECIMAL(18,2)
+            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '2', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '2', 'amount')::DECIMAL(18,2)
+            WHEN json_extract_path_text(rr.monetary_components, 'discounts', '3', 'code') = 'NCEMI' THEN json_extract_path_text(rr.monetary_components, 'discounts', '3', 'amount')::DECIMAL(18,2)
             ELSE NULL
         END AS ncemi_amount,
 
@@ -366,9 +366,9 @@ settlements AS (
         json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'igst', 'rate') AS igst_rate,
 
         -- Tax amounts
-        json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::FLOAT AS cgst_amount,
-        json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::FLOAT AS sgst_amount,
-        json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'igst', 'amount')::FLOAT AS igst_amount,
+        json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::DECIMAL(18,2) AS cgst_amount,
+        json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::DECIMAL(18,2) AS sgst_amount,
+        json_extract_path_text(rr.monetary_components, 'tax', 'breakup', 'igst', 'amount')::DECIMAL(18,2) AS igst_amount,
 
         -- Billing cycle dates (for deferral calculation)
         rr.start_date AS billing_start_date,
@@ -408,17 +408,17 @@ settlements AS (
         'Credit_Note'::VARCHAR AS cycle_type,
         cn.issue_date AS recognised_date,
 
-        json_extract_path_text(ic.monetary_components, 'taxableAmount')::FLOAT          AS taxable_amount,
-        json_extract_path_text(ic.monetary_components, 'postTaxAmount')::FLOAT          AS post_tax_amount,
-        NULL::FLOAT AS ncemi_amount,
+        json_extract_path_text(ic.monetary_components, 'taxableAmount')::DECIMAL(18,2)          AS taxable_amount,
+        json_extract_path_text(ic.monetary_components, 'postTaxAmount')::DECIMAL(18,2)          AS post_tax_amount,
+        NULL::DECIMAL(18,2) AS ncemi_amount,
 
         json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'cgst', 'rate')   AS cgst_rate,
         json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'sgst', 'rate')   AS sgst_rate,
         json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'igst', 'rate')   AS igst_rate,
 
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::FLOAT AS cgst_amount,
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::FLOAT AS sgst_amount,
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'igst', 'amount')::FLOAT AS igst_amount,
+        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::DECIMAL(18,2) AS cgst_amount,
+        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::DECIMAL(18,2) AS sgst_amount,
+        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'igst', 'amount')::DECIMAL(18,2) AS igst_amount,
 
         NULL::DATE AS billing_start_date,
         NULL::DATE AS billing_end_date,
@@ -453,17 +453,17 @@ settlements AS (
         'Credit_Note'::VARCHAR AS cycle_type,
         cn.issue_date AS recognised_date,
 
-        json_extract_path_text(os.monetary_components, 'taxableAmount')::FLOAT          AS taxable_amount,
-        json_extract_path_text(os.monetary_components, 'postTaxAmount')::FLOAT          AS post_tax_amount,
-        NULL::FLOAT AS ncemi_amount,
+        json_extract_path_text(os.monetary_components, 'taxableAmount')::DECIMAL(18,2)          AS taxable_amount,
+        json_extract_path_text(os.monetary_components, 'postTaxAmount')::DECIMAL(18,2)          AS post_tax_amount,
+        NULL::DECIMAL(18,2) AS ncemi_amount,
 
         json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'cgst', 'rate')   AS cgst_rate,
         json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'sgst', 'rate')   AS sgst_rate,
         json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'igst', 'rate')   AS igst_rate,
 
-        json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::FLOAT AS cgst_amount,
-        json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::FLOAT AS sgst_amount,
-        json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'igst', 'amount')::FLOAT AS igst_amount,
+        json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::DECIMAL(18,2) AS cgst_amount,
+        json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::DECIMAL(18,2) AS sgst_amount,
+        json_extract_path_text(os.monetary_components, 'tax', 'breakup', 'igst', 'amount')::DECIMAL(18,2) AS igst_amount,
 
         NULL::DATE AS billing_start_date,
         NULL::DATE AS billing_end_date,
@@ -493,9 +493,9 @@ settlements AS (
 
 SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
  	taxable_amount, post_tax_amount, ncemi_amount,
- 	COALESCE(NULLIF(cgst_rate,0)::float, (ROUND((cgst_amount::float * 100) / NULLIF(taxable_amount,0)::float)/100)::float) as cgst_rate,
- 	COALESCE(NULLIF(sgst_rate,0)::float, (ROUND((sgst_amount::float * 100) / NULLIF(taxable_amount,0)::float)/100)::float) as sgst_rate,
- 	COALESCE(NULLIF(igst_rate,0)::float, (ROUND((igst_amount::float * 100) / NULLIF(taxable_amount,0)::float)/100)::float) as igst_rate,
+ 	COALESCE(NULLIF(cgst_rate,0)::DECIMAL(18,6), (ROUND((cgst_amount::DECIMAL(18,2) * 100) / NULLIF(taxable_amount,0)::DECIMAL(18,2))/100)::DECIMAL(18,6)) as cgst_rate,
+ 	COALESCE(NULLIF(sgst_rate,0)::DECIMAL(18,6), (ROUND((sgst_amount::DECIMAL(18,2) * 100) / NULLIF(taxable_amount,0)::DECIMAL(18,2))/100)::DECIMAL(18,6)) as sgst_rate,
+ 	COALESCE(NULLIF(igst_rate,0)::DECIMAL(18,6), (ROUND((igst_amount::DECIMAL(18,2) * 100) / NULLIF(taxable_amount,0)::DECIMAL(18,2))/100)::DECIMAL(18,6)) as igst_rate,
  	cgst_amount, sgst_amount, igst_amount, week_start_date, week_end_date, dispatch_fc_id,
  	billing_start_date, billing_end_date,
  	is_b2b
@@ -577,40 +577,40 @@ SELECT city_id, vertical, accountable_entity_id, cycle_type, recognised_date,
 
         -- Ledger names/codes derived from tax rate
         CASE
-            WHEN ev.cgst_rate::FLOAT = 0.025 THEN 'Output CGST 2.5%'
-            WHEN ev.cgst_rate::FLOAT = 0.06  THEN 'Output CGST 6%'
-            WHEN ev.cgst_rate::FLOAT = 0.09  THEN 'Output CGST 9%'
-            WHEN ev.cgst_rate::FLOAT = 0.14  THEN 'Output CGST 14%'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.025 THEN 'Output CGST 2.5%'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.06  THEN 'Output CGST 6%'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.09  THEN 'Output CGST 9%'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.14  THEN 'Output CGST 14%'
         END AS cgst_ledger_name,
         CASE
-            WHEN ev.cgst_rate::FLOAT = 0.025 THEN '3006250'
-            WHEN ev.cgst_rate::FLOAT = 0.06  THEN '3006260'
-            WHEN ev.cgst_rate::FLOAT = 0.09  THEN '3006270'
-            WHEN ev.cgst_rate::FLOAT = 0.14  THEN '3006280'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.025 THEN '3006250'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.06  THEN '3006260'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.09  THEN '3006270'
+            WHEN ev.cgst_rate::DECIMAL(18,6) = 0.14  THEN '3006280'
         END AS cgst_ledger_code,
         CASE
-            WHEN ev.sgst_rate::FLOAT = 0.025 THEN 'Output SGST 2.5%'
-            WHEN ev.sgst_rate::FLOAT = 0.06  THEN 'Output SGST 6%'
-            WHEN ev.sgst_rate::FLOAT = 0.09  THEN 'Output SGST 9%'
-            WHEN ev.sgst_rate::FLOAT = 0.14  THEN 'Output SGST 14%'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.025 THEN 'Output SGST 2.5%'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.06  THEN 'Output SGST 6%'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.09  THEN 'Output SGST 9%'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.14  THEN 'Output SGST 14%'
         END AS sgst_ledger_name,
         CASE
-            WHEN ev.sgst_rate::FLOAT = 0.025 THEN '3006290'
-            WHEN ev.sgst_rate::FLOAT = 0.06  THEN '3006300'
-            WHEN ev.sgst_rate::FLOAT = 0.09  THEN '3006310'
-            WHEN ev.sgst_rate::FLOAT = 0.14  THEN '3006320'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.025 THEN '3006290'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.06  THEN '3006300'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.09  THEN '3006310'
+            WHEN ev.sgst_rate::DECIMAL(18,6) = 0.14  THEN '3006320'
         END AS sgst_ledger_code,
         CASE
-            WHEN ev.igst_rate::FLOAT = 0.05 THEN 'Output IGST 5%'
-            WHEN ev.igst_rate::FLOAT = 0.12 THEN 'Output IGST 12%'
-            WHEN ev.igst_rate::FLOAT = 0.18 THEN 'Output IGST 18%'
-            WHEN ev.igst_rate::FLOAT = 0.28 THEN 'Output IGST 28%'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.05 THEN 'Output IGST 5%'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.12 THEN 'Output IGST 12%'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.18 THEN 'Output IGST 18%'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.28 THEN 'Output IGST 28%'
         END AS igst_ledger_name,
         CASE
-            WHEN ev.igst_rate::FLOAT = 0.05 THEN '3006330'
-            WHEN ev.igst_rate::FLOAT = 0.12 THEN '3006340'
-            WHEN ev.igst_rate::FLOAT = 0.18 THEN '3006350'
-            WHEN ev.igst_rate::FLOAT = 0.28 THEN '3006360'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.05 THEN '3006330'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.12 THEN '3006340'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.18 THEN '3006350'
+            WHEN ev.igst_rate::DECIMAL(18,6) = 0.28 THEN '3006360'
         END AS igst_ledger_code,
 
         -- Aggregated amounts
@@ -659,8 +659,8 @@ unpivoted_data AS (
             WHEN vertical IN ('Refurb Sales - D2C', 'Refurb Sales - Store')               THEN 'Trade Receivables - Refurb Sales'
             ELSE 'Trade Receivables - Unknown'
         END AS particulars,
-        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_total::FLOAT END AS DR,
-        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_total::FLOAT ELSE NULL::FLOAT END AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::DECIMAL(18,2) ELSE sum_of_total::DECIMAL(18,2) END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_total::DECIMAL(18,2) ELSE NULL::DECIMAL(18,2) END AS CR,
         1 AS row_order, 0 AS sub_order
     FROM agg_view
 
@@ -690,8 +690,8 @@ unpivoted_data AS (
             WHEN vertical = 'Refurb Sales - Store'  THEN 'Revenue - Refurb Sales - Store'
             ELSE 'Revenue - Unknown'
         END AS particulars,
-        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_taxable_amount::FLOAT ELSE NULL::FLOAT END AS DR,
-        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_taxable_amount::FLOAT END AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_taxable_amount::DECIMAL(18,2) ELSE NULL::DECIMAL(18,2) END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::DECIMAL(18,2) ELSE sum_of_taxable_amount::DECIMAL(18,2) END AS CR,
         1 AS row_order, 1 AS sub_order
     FROM agg_view
 
@@ -702,8 +702,8 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         cgst_ledger_code AS code_number, cgst_ledger_name AS particulars,
-        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_cgst_amount::FLOAT ELSE NULL::FLOAT END AS DR,
-        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_cgst_amount::FLOAT END AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_cgst_amount::DECIMAL(18,2) ELSE NULL::DECIMAL(18,2) END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::DECIMAL(18,2) ELSE sum_of_cgst_amount::DECIMAL(18,2) END AS CR,
         1 AS row_order, 2 AS sub_order
     FROM agg_view
     WHERE sum_of_cgst_amount > 0
@@ -715,8 +715,8 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         sgst_ledger_code AS code_number, sgst_ledger_name AS particulars,
-        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_sgst_amount::FLOAT ELSE NULL::FLOAT END AS DR,
-        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_sgst_amount::FLOAT END AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_sgst_amount::DECIMAL(18,2) ELSE NULL::DECIMAL(18,2) END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::DECIMAL(18,2) ELSE sum_of_sgst_amount::DECIMAL(18,2) END AS CR,
         1 AS row_order, 3 AS sub_order
     FROM agg_view
     WHERE sum_of_sgst_amount > 0
@@ -728,8 +728,8 @@ unpivoted_data AS (
         city_name, city_id, email, p360_store_id, p360_organisation_id,
         vertical, cycle_type, recognised_date,
         igst_ledger_code AS code_number, igst_ledger_name AS particulars,
-        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_igst_amount::FLOAT ELSE NULL::FLOAT END AS DR,
-        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::FLOAT ELSE sum_of_igst_amount::FLOAT END AS CR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN sum_of_igst_amount::DECIMAL(18,2) ELSE NULL::DECIMAL(18,2) END AS DR,
+        CASE WHEN cycle_type = 'Credit_Note' THEN NULL::DECIMAL(18,2) ELSE sum_of_igst_amount::DECIMAL(18,2) END AS CR,
         1 AS row_order, 4 AS sub_order
     FROM agg_view
     WHERE sum_of_igst_amount > 0
@@ -743,7 +743,7 @@ unpivoted_data AS (
         vertical, cycle_type, recognised_date,
         '3004020' AS code_number,
         'Trade Receivables - B2B' AS particulars,
-        NULL::FLOAT AS DR, sum_of_total::FLOAT AS CR,
+        NULL::DECIMAL(18,2) AS DR, sum_of_total::DECIMAL(18,2) AS CR,
         1 AS row_order, 5 AS sub_order
     FROM agg_view
     WHERE is_b2b = TRUE
@@ -758,7 +758,7 @@ unpivoted_data AS (
         vertical, cycle_type, recognised_date,
         '1001150' AS code_number,
         'Revenue - B2B Sales' AS particulars,
-        sum_of_taxable_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        sum_of_taxable_amount::DECIMAL(18,2) AS DR, NULL::DECIMAL(18,2) AS CR,
         1 AS row_order, 6 AS sub_order
     FROM agg_view
     WHERE is_b2b = TRUE
@@ -772,7 +772,7 @@ unpivoted_data AS (
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, cycle_type, recognised_date,
         cgst_ledger_code AS code_number, cgst_ledger_name AS particulars,
-        sum_of_cgst_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        sum_of_cgst_amount::DECIMAL(18,2) AS DR, NULL::DECIMAL(18,2) AS CR,
         1 AS row_order, 7 AS sub_order
     FROM agg_view
     WHERE is_b2b = TRUE
@@ -787,7 +787,7 @@ unpivoted_data AS (
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, cycle_type, recognised_date,
         sgst_ledger_code AS code_number, sgst_ledger_name AS particulars,
-        sum_of_sgst_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        sum_of_sgst_amount::DECIMAL(18,2) AS DR, NULL::DECIMAL(18,2) AS CR,
         1 AS row_order, 8 AS sub_order
     FROM agg_view
     WHERE is_b2b = TRUE
@@ -802,7 +802,7 @@ unpivoted_data AS (
         p360_store_id AS store_id, p360_organisation_id AS organization_id,
         vertical, cycle_type, recognised_date,
         igst_ledger_code AS code_number, igst_ledger_name AS particulars,
-        sum_of_igst_amount::FLOAT AS DR, NULL::FLOAT AS CR,
+        sum_of_igst_amount::DECIMAL(18,2) AS DR, NULL::DECIMAL(18,2) AS CR,
         1 AS row_order, 9 AS sub_order
     FROM agg_view
     WHERE is_b2b = TRUE
@@ -836,7 +836,7 @@ unpivoted_data AS (
             WHEN vertical = 'Refurb Sales - Store'  THEN 'Revenue - Refurb Sales - Store'
             ELSE 'Revenue - Unknown'
         END AS particulars,
-        next_month_taxable_amount AS DR, NULL::FLOAT AS CR,
+        next_month_taxable_amount AS DR, NULL::DECIMAL(18,2) AS CR,
         2 AS row_order, 0 AS sub_order
     FROM deferral_agg
 
@@ -849,7 +849,7 @@ unpivoted_data AS (
         vertical, 'Deferral' AS cycle_type, recognised_date,
         '4006020' AS code_number,
         'Deferred Revenue' AS particulars,
-        NULL::FLOAT AS DR, next_month_taxable_amount AS CR,
+        NULL::DECIMAL(18,2) AS DR, next_month_taxable_amount AS CR,
         2 AS row_order, 1 AS sub_order
     FROM deferral_agg
 
@@ -862,7 +862,7 @@ unpivoted_data AS (
         vertical, 'Deferral' AS cycle_type, cr_recognised_date AS recognised_date,
         '4006020' AS code_number,
         'Deferred Revenue' AS particulars,
-        next_month_taxable_amount AS DR, NULL::FLOAT AS CR,
+        next_month_taxable_amount AS DR, NULL::DECIMAL(18,2) AS CR,
         2 AS row_order, 2 AS sub_order
     FROM deferral_agg
 
@@ -893,7 +893,7 @@ unpivoted_data AS (
             WHEN vertical = 'Refurb Sales - Store'  THEN 'Revenue - Refurb Sales - Store'
             ELSE 'Revenue - Unknown'
         END AS particulars,
-        NULL::FLOAT AS DR, next_month_taxable_amount AS CR,
+        NULL::DECIMAL(18,2) AS DR, next_month_taxable_amount AS CR,
         2 AS row_order, 3 AS sub_order
     FROM deferral_agg
 )
