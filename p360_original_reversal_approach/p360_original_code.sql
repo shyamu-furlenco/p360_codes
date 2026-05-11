@@ -1,5 +1,6 @@
+Create table p360_erp.p360_22_april_month_level_info as
 
-
+--drop table p360_erp.p360_22_april_month_level_info
 -- =============================================================================
 -- P360 FINAL VIEW (Combined) - Rental + Sale + UNLMTD
 -- =============================================================================
@@ -25,7 +26,7 @@ WITH
 --   'year'    → calendar year
 -- =============================================================================
 period_config AS (
-    SELECT 'week'::VARCHAR AS period_type   -- ← change only this value
+    SELECT 'month'::VARCHAR AS period_type   -- ← change only this value
 ),
 
 -- =============================================================================
@@ -400,51 +401,6 @@ settlements AS (
 
     UNION ALL
 
-    -- Part B1: Credit Notes via Invoice Cycles (INVALIDATED + DEFERRAL)
-    SELECT DISTINCT
-        ic.city_id,
-        fe.vertical,
-        cn.id AS accountable_entity_id,
-        'Credit_Note'::VARCHAR AS cycle_type,
-        cn.issue_date AS recognised_date,
-
-        json_extract_path_text(ic.monetary_components, 'taxableAmount')::DECIMAL(18,2)          AS taxable_amount,
-        json_extract_path_text(ic.monetary_components, 'postTaxAmount')::DECIMAL(18,2)          AS post_tax_amount,
-        NULL::DECIMAL(18,2) AS ncemi_amount,
-
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'cgst', 'rate')   AS cgst_rate,
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'sgst', 'rate')   AS sgst_rate,
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'igst', 'rate')   AS igst_rate,
-
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'cgst', 'amount')::DECIMAL(18,2) AS cgst_amount,
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'sgst', 'amount')::DECIMAL(18,2) AS sgst_amount,
-        json_extract_path_text(ic.monetary_components, 'tax', 'breakup', 'igst', 'amount')::DECIMAL(18,2) AS igst_amount,
-
-        NULL::DATE AS billing_start_date,
-        NULL::DATE AS billing_end_date,
-
-        CASE WHEN EXTRACT(DOW FROM cn.issue_date::DATE) = 0
-             THEN cn.issue_date::DATE - 6
-             ELSE cn.issue_date::DATE - EXTRACT(DOW FROM cn.issue_date::DATE)::INTEGER + 1
-        END AS week_start_date,
-        CASE WHEN EXTRACT(DOW FROM cn.issue_date::DATE) = 0
-             THEN cn.issue_date::DATE
-             ELSE cn.issue_date::DATE - EXTRACT(DOW FROM cn.issue_date::DATE)::INTEGER + 7
-        END AS week_end_date,
-        fe.dispatch_fc_id,
-        fe.is_b2b
-
-    FROM furbooks_evolve.invoice_cycles AS ic
-    JOIN furbooks_evolve.credit_notes AS cn ON cn.invoice_id = ic.invoice_id
-    JOIN filtered_entities fe
-        ON ic.accountable_entity_id = fe.entity_id
-       AND ic.accountable_entity_type = fe.entity_type
-    WHERE ic.state = 'INVALIDATED'
-      AND ic.revenue_recognition_type = 'DEFERRAL'
-      AND ic.start_date >= 'April 01, 2024'
-
-    UNION ALL
-
     -- Part B2: Credit Notes via Outstanding Settlements
     SELECT DISTINCT
         os.city_id,
@@ -479,14 +435,24 @@ settlements AS (
         fe.dispatch_fc_id,
         fe.is_b2b
 
-    FROM furbooks_evolve.credit_notes AS cn
-    JOIN furbooks_evolve.outstanding_settlements AS os
-        ON cn.id = os.credit_note_id
-       AND os.credit_note_id IS NOT NULL
-    JOIN filtered_entities fe
-        ON os.accountable_entity_id = fe.entity_id
-       AND os.accountable_entity_type = fe.entity_type
-    WHERE cn.issue_date >= 'April 01, 2024'
+FROM 
+    furbooks_evolve.outstanding_settlements os
+INNER JOIN 
+    furbooks_evolve.outstandings o 
+    ON os.outstanding_id = o.id
+INNER JOIN 
+    furbooks_evolve.invoice_cycles ic 
+    ON ic.id = o.invoice_cycle_id
+LEFT JOIN furbooks_evolve.Credit_Notes as cn 
+ON cn.id = os.credit_note_id
+
+JOIN filtered_entities fe
+ON os.accountable_entity_id = fe.entity_id
+AND os.accountable_entity_type = fe.entity_type
+WHERE 1=1 
+ AND os.credit_note_id is not null
+ AND ic.state != 'INVALIDATED'
+ AND cn.issue_date >= 'April 01, 2024'   
 )
 
 , gst_fix as (
@@ -954,10 +920,4 @@ GROUP BY
     end_date,
     row_order,
     sub_order
-ORDER BY
-    city_name,
-    start_date,
-    cycle_type,
-    vertical,
-    row_order,
-    sub_order
+
